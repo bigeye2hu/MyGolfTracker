@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from .routes.health import router as health_router
 from .routes.analyze import router as analyze_router
 
@@ -17,7 +18,11 @@ def create_app() -> FastAPI:
     )
     
     app.include_router(health_router)
-    app.include_router(analyze_router)
+    app.include_router(analyze_router, prefix="/analyze")
+    
+    # 挂载静态文件目录
+    app.mount("/static", StaticFiles(directory="static"), name="static")
+    
     return app
 
 

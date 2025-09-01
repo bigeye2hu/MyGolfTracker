@@ -1,0 +1,344 @@
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    padding: 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #333;
+}
+
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    background: white;
+    border-radius: 15px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+    overflow: hidden;
+}
+
+.header {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    color: white;
+    padding: 30px;
+    text-align: center;
+}
+
+.header h1 {
+    margin: 0;
+    font-size: 2.5em;
+    font-weight: 300;
+}
+
+.content {
+    padding: 30px;
+}
+
+.upload-section {
+    text-align: center;
+    margin: 30px 0;
+    padding: 30px;
+    border: 2px dashed #4facfe;
+    border-radius: 15px;
+    background: #f8f9ff;
+}
+
+.upload-btn, .btn {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    color: white;
+    border: none;
+    padding: 15px 30px;
+    border-radius: 25px;
+    font-size: 1.1em;
+    cursor: pointer;
+    margin: 10px;
+}
+
+.btn-secondary {
+    background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+
+.file-input {
+    display: none;
+}
+
+.status {
+    padding: 15px;
+    border-radius: 8px;
+    margin: 20px 0;
+    text-align: center;
+    font-weight: 500;
+}
+
+.status.success { background: #d4edda; color: #155724; }
+.status.error { background: #f8d7da; color: #721c24; }
+.status.processing { background: #d1ecf1; color: #0c5460; }
+
+.results-section {
+    margin-top: 30px;
+}
+
+.result-card {
+    background: #f8f9ff;
+    padding: 20px;
+    border-radius: 10px;
+    margin: 15px 0;
+}
+
+.trajectory-chart {
+    width: 100%;
+    height: 400px;
+    background: #f8f9ff;
+    border-radius: 10px;
+    margin: 20px 0;
+    position: relative;
+    border: 1px solid #e0e0e0;
+}
+
+.json-output {
+    background: #2d3748;
+    color: #e2e8f0;
+    padding: 20px;
+    border-radius: 10px;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.download-btn {
+    background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 1em;
+    cursor: pointer;
+    margin: 10px 5px;
+    text-decoration: none;
+    display: inline-block;
+}
+
+.frame-controls {
+    margin: 20px 0;
+    text-align: center;
+}
+
+.frame-slider {
+    width: 80%;
+    margin: 0 10px;
+}
+
+.frame-info {
+    margin: 10px 0;
+    font-size: 1.1em;
+    color: #666;
+}
+
+.detection-frame {
+    position: relative;
+    display: inline-block;
+    margin: 10px;
+    border: 2px solid #4facfe;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.detection-box {
+    position: absolute;
+    border: 2px solid #ff4757;
+    background: rgba(255, 71, 87, 0.2);
+    color: white;
+    font-size: 12px;
+    padding: 2px 4px;
+    border-radius: 4px;
+}
+
+.video-container {
+    position: relative;
+    margin: 20px 0;
+    display: inline-block;
+}
+
+.overlay-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+}
+
+.video-controls {
+    margin: 20px 0;
+}
+
+.detection-info {
+    margin: 20px 0;
+}
+
+/* 帧分析模块样式 */
+.frame-analysis-section {
+    margin-top: 20px;
+}
+
+.frame-controls {
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+.frame-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.frame-card {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 15px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.frame-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+}
+
+.frame-number {
+    font-weight: bold;
+    color: #333;
+}
+
+.detection-status {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.detection-status.detected {
+    background: #d4edda;
+    color: #155724;
+}
+
+.detection-status.not-detected {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.frame-image-placeholder {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 6px;
+    margin-bottom: 15px;
+    text-align: center;
+    min-height: 100px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.frame-coordinates, .frame-confidence {
+    margin: 5px 0;
+    font-size: 14px;
+}
+
+.frame-actions {
+    text-align: center;
+}
+
+.frame-details {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 8px;
+    margin-top: 20px;
+}
+
+.detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin-top: 15px;
+}
+
+.detail-item {
+    background: white;
+    padding: 15px;
+    border-radius: 6px;
+    border: 1px solid #e9ecef;
+}
+
+.detail-item ul {
+    margin: 10px 0;
+    padding-left: 20px;
+}
+
+.detail-item li {
+    margin: 5px 0;
+}
+
+/* JSON输出模块样式 */
+.json-output-section {
+    margin-top: 20px;
+}
+
+.json-controls {
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+.json-controls .btn {
+    margin: 0 10px;
+}
+
+.json-preview {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 20px;
+    margin-top: 20px;
+}
+
+.json-content {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 15px;
+    overflow-x: auto;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.json-content pre {
+    margin: 0;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.btn-success {
+    background-color: #28a745;
+    border-color: #28a745;
+    color: white;
+}
+
+.btn-success:hover {
+    background-color: #218838;
+    border-color: #1e7e34;
+}
+
+.btn-sm {
+    padding: 8px 16px;
+    font-size: 0.9em;
+}

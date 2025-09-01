@@ -22,4 +22,4 @@ COPY data /app/data
 
 EXPOSE 5005
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5005", "--reload", "--log-level", "debug"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5005", "--log-level", "debug", "--timeout-keep-alive", "300"]

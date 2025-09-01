@@ -8,6 +8,12 @@ services:
     environment:
       - MODEL_PATH=data/ClubDetection_1000P_50R.pt
       - SERVICE_PORT=5005
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 4G
     volumes:
       - /data:/data:ro
     restart: unless-stopped

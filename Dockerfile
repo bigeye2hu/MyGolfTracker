@@ -22,4 +22,4 @@ COPY data /app/data
 
 EXPOSE 5005
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5005", "--workers", "2"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5005", "--workers", "1"]

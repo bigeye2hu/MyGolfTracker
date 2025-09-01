@@ -1,0 +1,15 @@
+version: "3.9"
+services:
+  golftracker:
+    build: .
+    container_name: golftracker-service
+    ports:
+      - "5005:5005"
+    environment:
+      - MODEL_PATH=/data/ClubDetection_1000P_50R.pt
+      - SERVICE_PORT=5005
+    volumes:
+      - /data:/data:ro
+    restart: unless-stopped
+
+

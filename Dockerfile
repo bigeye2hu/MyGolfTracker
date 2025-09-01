@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app /app/app
 COPY analyzer /app/analyzer
 COPY detector /app/detector
+COPY static /app/static
 
 EXPOSE 5005
 

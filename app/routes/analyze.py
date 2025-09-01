@@ -11,9 +11,9 @@ import cv2
 
 from detector.yolov8_detector import YOLOv8Detector
 from detector.pose_detector import PoseDetector
-from core.ffmpeg import iter_video_frames
-from pipeline.swing_analyzer import SwingAnalyzer
-from pipeline.trajectory_optimizer import TrajectoryOptimizer
+from analyzer.ffmpeg import iter_video_frames
+from analyzer.swing_analyzer import SwingAnalyzer
+from analyzer.trajectory_optimizer import TrajectoryOptimizer
 
 
 router = APIRouter()

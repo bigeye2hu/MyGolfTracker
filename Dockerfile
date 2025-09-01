@@ -15,10 +15,9 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app /app/app
-COPY core /app/core
+COPY analyzer /app/analyzer
+COPY detector /app/detector
 
 EXPOSE 5005
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5005", "--workers", "2"]
-
-

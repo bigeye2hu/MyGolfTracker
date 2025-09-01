@@ -4,7 +4,7 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
-from core.config import MODEL_PATH
+from analyzer.config import MODEL_PATH
 
 
 class YOLOv8Detector:

@@ -22,3 +22,4 @@ else
     echo "❌ 服务启动失败，查看日志:"
     docker-compose logs
     exit 1
+fi

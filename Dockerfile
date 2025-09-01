@@ -18,6 +18,7 @@ COPY app /app/app
 COPY analyzer /app/analyzer
 COPY detector /app/detector
 COPY static /app/static
+COPY data /app/data
 
 EXPOSE 5005
 

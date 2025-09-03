@@ -129,7 +129,7 @@ class FrameAnalysisModule {
                 </div>
                 <div class="frame-image-placeholder">
                     <div class="frame-coordinates">
-                        <strong>坐标:</strong> X: ${detection.x}, Y: ${detection.y}
+                        <strong>坐标(归一化):</strong> X: ${detection.norm_x?.toFixed(4) ?? (detection.x / this.currentAnalysisData.video_info.width).toFixed(4)}, Y: ${detection.norm_y?.toFixed(4) ?? (detection.y / this.currentAnalysisData.video_info.height).toFixed(4)}
                     </div>
                     <div class="frame-confidence">
                         <strong>置信度:</strong> ${Math.round(detection.confidence * 100)}%
@@ -187,10 +187,10 @@ class FrameAnalysisModule {
                             <strong>检测状态:</strong> ✅ 成功检测到杆头
                         </div>
                         <div class="detail-item">
-                            <strong>X坐标:</strong> ${detection.x} 像素
+                            <strong>X坐标(归一化):</strong> ${(detection.norm_x ?? (detection.x / this.currentAnalysisData.video_info.width)).toFixed(6)}
                         </div>
                         <div class="detail-item">
-                            <strong>Y坐标:</strong> ${detection.y} 像素
+                            <strong>Y坐标(归一化):</strong> ${(detection.norm_y ?? (detection.y / this.currentAnalysisData.video_info.height)).toFixed(6)}
                         </div>
                         <div class="detail-item">
                             <strong>置信度:</strong> ${Math.round(detection.confidence * 100)}%

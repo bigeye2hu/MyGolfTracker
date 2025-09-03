@@ -159,13 +159,25 @@ class VideoPlayerModule {
         
         if (stepForwardBtn) {
             stepForwardBtn.addEventListener('click', () => {
-                this.videoPlayer.currentTime += 1/30; // 假设30fps
+                const fps = this.currentAnalysisData?.video_info?.fps || 30;
+                this.videoPlayer.currentTime += 1/fps;
+                // 手动触发overlay更新
+                setTimeout(() => {
+                    this.updateOverlay();
+                    this.updateCurrentFrameInfo();
+                }, 50);
             });
         }
         
         if (stepBackwardBtn) {
             stepBackwardBtn.addEventListener('click', () => {
-                this.videoPlayer.currentTime -= 1/30; // 假设30fps
+                const fps = this.currentAnalysisData?.video_info?.fps || 30;
+                this.videoPlayer.currentTime -= 1/fps;
+                // 手动触发overlay更新
+                setTimeout(() => {
+                    this.updateOverlay();
+                    this.updateCurrentFrameInfo();
+                }, 50);
             });
         }
     }
@@ -184,7 +196,7 @@ class VideoPlayerModule {
         if (!this.overlayCanvas || !this.currentAnalysisData || !this.videoPlayer) return;
         
         const currentTime = this.videoPlayer.currentTime;
-        const fps = 30; // 假设30fps
+        const fps = this.currentAnalysisData.video_info?.fps || 30;
         const currentFrame = Math.floor(currentTime * fps);
         
         // 清除Canvas
@@ -206,15 +218,21 @@ class VideoPlayerModule {
             const x = detection.x * scaleX;
             const y = detection.y * scaleY;
             
-            // 绘制检测框
+            // 绘制检测框（绿色方框）
             this.canvasContext.strokeStyle = '#00ff00';
             this.canvasContext.lineWidth = 3;
-            this.canvasContext.strokeRect(x - 20, y - 20, 40, 40);
+            this.canvasContext.strokeRect(x - 25, y - 25, 50, 50);
+            
+            // 绘制中心点
+            this.canvasContext.fillStyle = '#ff0000';
+            this.canvasContext.beginPath();
+            this.canvasContext.arc(x, y, 3, 0, 2 * Math.PI);
+            this.canvasContext.fill();
             
             // 绘制置信度文本
             this.canvasContext.fillStyle = '#00ff00';
-            this.canvasContext.font = '16px Arial';
-            this.canvasContext.fillText(`${Math.round(detection.confidence * 100)}%`, x + 25, y);
+            this.canvasContext.font = 'bold 14px Arial';
+            this.canvasContext.fillText(`${Math.round(detection.confidence * 100)}%`, x + 30, y - 10);
         }
     }
 

@@ -5,6 +5,9 @@ import os
 import tempfile
 import shutil
 from typing import List, Dict, Tuple
+import threading
+import uuid
+import time
 import json
 
 import numpy as np
@@ -18,6 +21,150 @@ from analyzer.trajectory_optimizer import TrajectoryOptimizer
 
 
 router = APIRouter()
+
+# 简易后台任务存储
+_JOB_STORE: Dict[str, Dict] = {}
+
+def _analyze_video_job(job_id: str, video_path: str) -> None:
+    try:
+        _JOB_STORE[job_id]["status"] = "running"
+        detector = YOLOv8Detector()
+        trajectory = []
+        frame_detections = []
+        total_frames = 0
+        detected_frames = 0
+        total_confidence = 0.0
+
+        cap = cv2.VideoCapture(video_path)
+        video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        video_fps = int(cap.get(cv2.CAP_PROP_FPS))
+        cap.release()
+
+        # 定义安全浮点数转换函数
+        def safe_float(value):
+            """确保浮点数值是JSON兼容的"""
+            if value is None or (isinstance(value, float) and (value != value or value == float('inf') or value == float('-inf'))):
+                return 0.0
+            return float(value)
+        
+        def clean_trajectory(trajectory):
+            """清理轨迹中的NaN值"""
+            cleaned = []
+            for point in trajectory:
+                if isinstance(point, list) and len(point) >= 2:
+                    x = safe_float(point[0])
+                    y = safe_float(point[1])
+                    cleaned.append([x, y])
+                else:
+                    cleaned.append([0.0, 0.0])
+            return cleaned
+        
+        # 处理每一帧，提高检测精度
+        for ok, frame_bgr in iter_video_frames(video_path, sample_stride=1, max_size=960):
+            if not ok:
+                break
+            res = detector.detect_single_point(frame_bgr)
+            if res is not None:
+                cx, cy, conf = res
+                # 获取当前帧的实际尺寸（可能被缩放）
+                frame_h, frame_w = frame_bgr.shape[:2]
+                
+                # 计算缩放比例
+                scale_x = video_width / frame_w
+                scale_y = video_height / frame_h
+                
+                # 将检测坐标映射回原始视频坐标
+                orig_x = cx * scale_x
+                orig_y = cy * scale_y
+                
+                # 确保坐标在有效范围内
+                x = max(0, min(video_width, int(orig_x)))
+                y = max(0, min(video_height, int(orig_y)))
+                
+                trajectory.append([x, y])
+                frame_detections.append({
+                    "frame": total_frames,
+                    "x": int(safe_float(x)),
+                    "y": int(safe_float(y)),
+                    "norm_x": safe_float((x / video_width) if video_width else 0.0),
+                    "norm_y": safe_float((y / video_height) if video_height else 0.0),
+                    "confidence": safe_float(conf),
+                    "detected": True
+                })
+                detected_frames += 1
+                total_confidence += conf
+            else:
+                trajectory.append([0, 0])
+                frame_detections.append({
+                    "frame": total_frames,
+                    "x": 0,
+                    "y": 0,
+                    "norm_x": 0.0,
+                    "norm_y": 0.0,
+                    "confidence": 0.0,
+                    "detected": False
+                })
+            total_frames += 1
+            # 简单进度，每处理100帧打点
+            if total_frames % 100 == 0:
+                _JOB_STORE[job_id]["progress"] = total_frames
+
+        avg_confidence = total_confidence / detected_frames if detected_frames > 0 else 0.0
+        detection_rate = (detected_frames / total_frames * 100) if total_frames > 0 else 0.0
+
+        # 将像素坐标转换为归一化坐标，与API保持一致
+        norm_trajectory = []
+        for x, y in trajectory:
+            if x == 0 and y == 0:  # 未检测到
+                norm_trajectory.append([0.0, 0.0])
+            else:
+                norm_x = safe_float(x / video_width)
+                norm_y = safe_float(y / video_height)
+                norm_trajectory.append([norm_x, norm_y])
+        
+        # 清理轨迹数据
+        norm_trajectory = clean_trajectory(norm_trajectory)
+
+        # 为了对比，我们也生成优化后的轨迹（但不使用）
+        from analyzer.trajectory_optimizer import TrajectoryOptimizer
+        from analyzer.fast_motion_optimizer import FastMotionOptimizer
+        
+        # 使用标准优化器
+        trajectory_optimizer = TrajectoryOptimizer()
+        optimized_trajectory, _ = trajectory_optimizer.optimize_trajectory(norm_trajectory)
+        optimized_trajectory = clean_trajectory(optimized_trajectory)
+        
+        # 使用快速移动优化器
+        fast_motion_optimizer = FastMotionOptimizer(confidence_threshold=0.3, velocity_threshold=0.15)
+        fast_motion_trajectory, _ = fast_motion_optimizer.optimize_trajectory(norm_trajectory)
+        fast_motion_trajectory = clean_trajectory(fast_motion_trajectory)
+
+        result = {
+            "total_frames": total_frames,
+            "detected_frames": detected_frames,
+            "detection_rate": round(detection_rate, 2),
+            "avg_confidence": round(avg_confidence, 3),
+            "club_head_trajectory": norm_trajectory,  # 原始轨迹（归一化坐标）
+            "optimized_trajectory": optimized_trajectory,  # 标准优化后的轨迹
+            "fast_motion_trajectory": fast_motion_trajectory,  # 快速移动优化后的轨迹
+            "frame_detections": frame_detections,
+            "video_info": {
+                "width": video_width,
+                "height": video_height,
+                "fps": video_fps
+            }
+        }
+        _JOB_STORE[job_id]["status"] = "done"
+        _JOB_STORE[job_id]["result"] = result
+    except Exception as e:
+        _JOB_STORE[job_id]["status"] = "error"
+        _JOB_STORE[job_id]["error"] = str(e)
+    finally:
+        try:
+            os.remove(video_path)
+        except Exception:
+            pass
 
 
 @router.post("/analyze")
@@ -62,7 +209,7 @@ async def analyze(
 
         # 检测杆头轨迹和人体姿态
         frame_index = 0
-        for ok, frame_bgr in iter_video_frames(tmp_path):
+        for ok, frame_bgr in iter_video_frames(tmp_path, sample_stride=1, max_size=960):
             if not ok:
                 break
                 
@@ -70,9 +217,25 @@ async def analyze(
             res = detector.detect_single_point(frame_bgr)
             if res is not None:
                 cx, cy, conf = res
+                # 获取当前帧的实际尺寸（可能被缩放）
+                frame_h, frame_w = frame_bgr.shape[:2]
+                
+                # 计算缩放比例
+                scale_x = video_spec["width"] / frame_w
+                scale_y = video_spec["height"] / frame_h
+                
+                # 将检测坐标映射回原始视频坐标
+                orig_x = cx * scale_x
+                orig_y = cy * scale_y
+                
                 # 转换为归一化坐标 (0-1)
-                norm_x = cx / video_spec["width"]
-                norm_y = cy / video_spec["height"]
+                norm_x = orig_x / video_spec["width"]
+                norm_y = orig_y / video_spec["height"]
+                
+                # 确保坐标在有效范围内
+                norm_x = max(0.0, min(1.0, norm_x))
+                norm_y = max(0.0, min(1.0, norm_y))
+                
                 trajectory.append([norm_x, norm_y])
             else:
                 trajectory.append([0.0, 0.0])  # 未检测到时使用 (0,0)
@@ -93,9 +256,14 @@ async def analyze(
         
         video_spec["num_frames"] = frame_index
 
-        # 优化轨迹数据
-        optimized_trajectory, quality_scores = trajectory_optimizer.optimize_trajectory(trajectory)
-        trajectory_stats = trajectory_optimizer.get_trajectory_statistics(optimized_trajectory)
+        # 禁用轨迹优化，直接使用原始数据
+        # optimized_trajectory, quality_scores = trajectory_optimizer.optimize_trajectory(trajectory)
+        # trajectory_stats = trajectory_optimizer.get_trajectory_statistics(optimized_trajectory)
+        
+        # 使用原始轨迹数据
+        optimized_trajectory = trajectory
+        quality_scores = [1.0] * len(trajectory)  # 原始数据质量评分设为1.0
+        trajectory_stats = {"valid_points": len(trajectory), "total_points": len(trajectory), "coverage": 1.0}
 
         # 分析挥杆相位
         swing_analyzer = SwingAnalyzer(optimized_trajectory, video_spec, poses)
@@ -185,6 +353,9 @@ async def get_server_test_page():
         <div class="header">
             <h1>🏌️ GolfTracker 服务器端测试</h1>
             <p>上传高尔夫挥杆视频，测试YOLOv8检测和生成golftrainer兼容数据</p>
+            <div style="margin-top:8px;padding:8px 12px;border:1px solid #ddd;border-radius:8px;background:#f8f9fa;display:inline-block;color:#333;">
+              <strong style="color:#2c3e50;">运行模式</strong>：CPU 增强 / 抽帧步长 <code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">1</code> / 长边≤<code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">960</code> / 推理分辨率 <code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">512</code>
+            </div>
         </div>
         
         <div class="content">
@@ -197,13 +368,13 @@ async def get_server_test_page():
     </div>
 
     <!-- 模块化组件 -->
-    <script src="/static/js/upload-module.js?v=1.1"></script>
-    <script src="/static/js/results-module.js?v=1.1"></script>
-    <script src="/static/js/trajectory-module.js?v=1.1"></script>
-    <script src="/static/js/video-player-module.js?v=1.1"></script>
-    <script src="/static/js/json-output-module.js?v=1.1"></script>
-    <script src="/static/js/frame-analysis-module.js?v=1.1"></script>
-    <script src="/static/js/main.js?v=1.1"></script>
+    <script src="/static/js/upload-module.js?v=1.6"></script>
+    <script src="/static/js/results-module.js?v=1.6"></script>
+    <script src="/static/js/trajectory-module.js?v=1.6"></script>
+    <script src="/static/js/video-player-module.js?v=1.6"></script>
+    <script src="/static/js/json-output-module.js?v=1.6"></script>
+    <script src="/static/js/frame-analysis-module.js?v=1.6"></script>
+    <script src="/static/js/main.js?v=1.6"></script>
 </body>
 </html>
     """
@@ -241,82 +412,24 @@ async def analyze_video_test(video: UploadFile = File(...)):
             shutil.copyfileobj(video.file, tmp)
             tmp_path = tmp.name
 
-        detector = YOLOv8Detector()
-        trajectory = []
-        frame_detections = []
-        total_frames = 0
-        detected_frames = 0
-        total_confidence = 0.0
-
-        try:
-            # 获取视频信息
-            cap = cv2.VideoCapture(tmp_path)
-            video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            video_fps = int(cap.get(cv2.CAP_PROP_FPS))
-            cap.release()
-
-            # 检测每一帧的杆头位置
-            for ok, frame_bgr in iter_video_frames(tmp_path):
-                if not ok:
-                    break
-                
-                # 杆头检测
-                res = detector.detect_single_point(frame_bgr)
-                if res is not None:
-                    cx, cy, conf = res
-                    # 确保坐标是整数
-                    x = max(0, min(video_width, int(cx)))
-                    y = max(0, min(video_height, int(cy)))
-                    
-                    trajectory.append([x, y])
-                    frame_detections.append({
-                        "frame": total_frames,
-                        "x": x,
-                        "y": y,
-                        "confidence": float(conf),
-                        "detected": True
-                    })
-                    detected_frames += 1
-                    total_confidence += conf
-                else:
-                    trajectory.append([0, 0])
-                    frame_detections.append({
-                        "frame": total_frames,
-                        "x": 0,
-                        "y": 0,
-                        "confidence": 0.0,
-                        "detected": False
-                    })
-                
-                total_frames += 1
-
-            # 计算统计数据
-            avg_confidence = total_confidence / detected_frames if detected_frames > 0 else 0.0
-            detection_rate = (detected_frames / total_frames * 100) if total_frames > 0 else 0.0
-
-            # 构建响应数据
-            response = {
-                "total_frames": total_frames,
-                "detected_frames": detected_frames,
-                "detection_rate": round(detection_rate, 2),
-                "avg_confidence": round(avg_confidence, 3),
-                "club_head_trajectory": trajectory,
-                "frame_detections": frame_detections,
-                "video_info": {
-                    "width": video_width,
-                    "height": video_height,
-                    "fps": video_fps
-                }
-            }
-            
-            return response
-            
-        finally:
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                pass
+        # 后台任务：生成 job_id 并启动线程处理
+        job_id = str(uuid.uuid4())
+        _JOB_STORE[job_id] = {"status": "queued", "progress": 0, "filename": video.filename}
+        t = threading.Thread(target=_analyze_video_job, args=(job_id, tmp_path), daemon=True)
+        t.start()
+        return {"job_id": job_id, "status": "queued"}
                 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+
+@router.get("/video/status")
+async def analyze_video_status(job_id: str):
+    job = _JOB_STORE.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job not found")
+    if job.get("status") == "done":
+        return {"job_id": job_id, "status": "done", "result": job.get("result")}
+    if job.get("status") == "error":
+        return {"job_id": job_id, "status": "error", "error": job.get("error")}
+    return {"job_id": job_id, "status": job.get("status"), "progress": job.get("progress", 0)}

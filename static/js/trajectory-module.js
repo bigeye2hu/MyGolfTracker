@@ -36,6 +36,20 @@ class TrajectoryModule {
         trajectoryChart.className = 'trajectory-chart';
         trajectoryChart.id = 'trajectoryChart';
         trajectoryChart.innerHTML = `
+            <div class="trajectory-controls" style="margin-bottom: 15px;">
+                <label style="margin-right: 15px;">
+                    <input type="radio" name="trajectoryType" value="original" checked> 原始检测数据
+                </label>
+                <label style="margin-right: 15px;">
+                    <input type="radio" name="trajectoryType" value="optimized"> 标准优化
+                </label>
+                <label style="margin-right: 15px;">
+                    <input type="radio" name="trajectoryType" value="fast_motion"> 快速移动优化
+                </label>
+                <label>
+                    <input type="radio" name="trajectoryType" value="comparison"> 三线对比
+                </label>
+            </div>
             <canvas id="trajectoryCanvas" width="800" height="400"></canvas>
         `;
 
@@ -44,6 +58,18 @@ class TrajectoryModule {
 
         // 绘制轨迹
         this.drawTrajectoryChart(data);
+        
+        // 绑定控制事件
+        this.bindTrajectoryControls(data);
+    }
+
+    bindTrajectoryControls(data) {
+        const controls = document.querySelectorAll('input[name="trajectoryType"]');
+        controls.forEach(control => {
+            control.addEventListener('change', () => {
+                this.drawTrajectoryChart(data);
+            });
+        });
     }
 
     drawTrajectoryChart(data) {
@@ -57,8 +83,23 @@ class TrajectoryModule {
         // 清除画布
         ctx.clearRect(0, 0, width, height);
 
-        // 过滤掉零值坐标
-        const validPoints = data.club_head_trajectory.filter(point => point[0] > 0 && point[1] > 0);
+        // 获取当前选择的轨迹类型
+        const selectedType = document.querySelector('input[name="trajectoryType"]:checked')?.value || 'original';
+        
+        // 根据选择获取轨迹数据
+        let trajectoryData = data.club_head_trajectory;
+        let trajectoryLabel = '原始检测数据';
+        
+        if (selectedType === 'optimized' && data.optimized_trajectory) {
+            trajectoryData = data.optimized_trajectory;
+            trajectoryLabel = '标准优化数据';
+        } else if (selectedType === 'fast_motion' && data.fast_motion_trajectory) {
+            trajectoryData = data.fast_motion_trajectory;
+            trajectoryLabel = '快速移动优化数据';
+        }
+
+        // 过滤掉零值坐标（归一化坐标中0,0表示未检测到）
+        const validPoints = trajectoryData.filter(point => point[0] > 0 && point[1] > 0);
         
         if (validPoints.length === 0) {
             ctx.fillStyle = '#666';
@@ -68,21 +109,12 @@ class TrajectoryModule {
             return;
         }
 
-        // 计算坐标范围
-        const xCoords = validPoints.map(point => point[0]);
-        const yCoords = validPoints.map(point => point[1]);
-        
-        const minX = Math.min(...xCoords);
-        const maxX = Math.max(...xCoords);
-        const minY = Math.min(...yCoords);
-        const maxY = Math.max(...yCoords);
-
-        console.log('轨迹坐标范围:', { minX, maxX, minY, maxY });
-
-        // 计算缩放比例
+        // 归一化坐标直接映射到画布（0-1 映射到 0-canvas_size）
         const padding = 40;
-        const scaleX = (width - padding * 2) / (maxX - minX);
-        const scaleY = (height - padding * 2) / (maxY - minY);
+        const drawWidth = width - padding * 2;
+        const drawHeight = height - padding * 2;
+
+        console.log('归一化轨迹坐标:', validPoints.slice(0, 5)); // 显示前5个点
 
         // 绘制坐标轴
         ctx.strokeStyle = '#ccc';
@@ -100,14 +132,77 @@ class TrajectoryModule {
         ctx.lineTo(padding, height - padding);
         ctx.stroke();
 
-        // 绘制轨迹点
-        ctx.strokeStyle = '#4facfe';
+        // 如果是对比模式，绘制三条轨迹
+        if (selectedType === 'comparison' && data.optimized_trajectory && data.fast_motion_trajectory) {
+            // 绘制原始轨迹（蓝色）
+            this.drawTrajectoryLine(ctx, data.club_head_trajectory, '#4facfe', padding, drawWidth, drawHeight, width, height);
+            
+            // 绘制标准优化轨迹（红色）
+            this.drawTrajectoryLine(ctx, data.optimized_trajectory, '#ff4757', padding, drawWidth, drawHeight, width, height);
+            
+            // 绘制快速移动优化轨迹（绿色）
+            this.drawTrajectoryLine(ctx, data.fast_motion_trajectory, '#2ed573', padding, drawWidth, drawHeight, width, height);
+            
+            // 添加图例
+            ctx.fillStyle = '#333';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('原始数据', padding + 10, padding + 20);
+            ctx.fillText('标准优化', padding + 10, padding + 35);
+            ctx.fillText('快速移动优化', padding + 10, padding + 50);
+            
+            // 绘制图例颜色
+            ctx.fillStyle = '#4facfe';
+            ctx.fillRect(padding, padding + 10, 15, 3);
+            ctx.fillStyle = '#ff4757';
+            ctx.fillRect(padding, padding + 25, 15, 3);
+            ctx.fillStyle = '#2ed573';
+            ctx.fillRect(padding, padding + 40, 15, 3);
+        } else {
+            // 绘制单条轨迹
+            let color = '#4facfe'; // 默认蓝色
+            if (selectedType === 'optimized') color = '#ff4757'; // 红色
+            else if (selectedType === 'fast_motion') color = '#2ed573'; // 绿色
+            
+            this.drawTrajectoryLine(ctx, trajectoryData, color, padding, drawWidth, drawHeight, width, height);
+        }
+
+        // 添加轴标签
+        ctx.fillStyle = '#333';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        
+        // X轴标签
+        ctx.fillText('X坐标 (归一化 0-1)', width / 2, height - 10);
+        
+        // Y轴标签
+        ctx.save();
+        ctx.translate(20, height / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.fillText('Y坐标 (归一化 0-1)', 0, 0);
+        ctx.restore();
+        
+        // 添加轨迹类型标签
+        ctx.fillStyle = '#666';
+        ctx.font = '14px Arial';
+        ctx.textAlign = 'right';
+        ctx.fillText(trajectoryLabel, width - padding, padding + 20);
+    }
+
+    drawTrajectoryLine(ctx, trajectoryData, color, padding, drawWidth, drawHeight, width, height) {
+        const validPoints = trajectoryData.filter(point => point[0] > 0 && point[1] > 0);
+        
+        if (validPoints.length === 0) return;
+
+        // 绘制轨迹线
+        ctx.strokeStyle = color;
         ctx.lineWidth = 2;
         ctx.beginPath();
 
         validPoints.forEach((point, index) => {
-            const x = padding + (point[0] - minX) * scaleX;
-            const y = height - padding - (point[1] - minY) * scaleY;
+            // 归一化坐标 (0-1) 直接映射到画布坐标
+            const x = padding + point[0] * drawWidth;
+            const y = height - padding - point[1] * drawHeight; // Y轴翻转（图像坐标系）
             
             if (index === 0) {
                 ctx.moveTo(x, y);
@@ -119,30 +214,15 @@ class TrajectoryModule {
         ctx.stroke();
 
         // 绘制关键点
-        ctx.fillStyle = '#ff4757';
+        ctx.fillStyle = color;
         validPoints.forEach((point, index) => {
-            const x = padding + (point[0] - minX) * scaleX;
-            const y = height - padding - (point[1] - minY) * scaleY;
+            const x = padding + point[0] * drawWidth;
+            const y = height - padding - point[1] * drawHeight;
             
             ctx.beginPath();
             ctx.arc(x, y, 3, 0, 2 * Math.PI);
             ctx.fill();
         });
-
-        // 添加轴标签
-        ctx.fillStyle = '#333';
-        ctx.font = '12px Arial';
-        ctx.textAlign = 'center';
-        
-        // X轴标签
-        ctx.fillText('X坐标 (像素)', width / 2, height - 10);
-        
-        // Y轴标签
-        ctx.save();
-        ctx.translate(20, height / 2);
-        ctx.rotate(-Math.PI / 2);
-        ctx.fillText('Y坐标 (像素)', 0, 0);
-        ctx.restore();
     }
 }
 

@@ -76,17 +76,45 @@ class UploadModule {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
 
-            const result = await response.json();
-            console.log('解析响应结果:', result);
-            this.showStatus('分析完成！', 'success');
-            
-            // 触发分析完成事件
-            this.onAnalysisComplete(result);
+            const resp = await response.json();
+            console.log('解析响应结果:', resp);
+
+            // 后台任务模式：返回 job_id 后轮询
+            if (resp && resp.job_id) {
+                const jobId = resp.job_id;
+                this.showStatus('已提交，正在后台处理中…', 'processing');
+                const data = await this.pollJob(jobId);
+                this.showStatus('分析完成！', 'success');
+                this.onAnalysisComplete(data);
+            } else {
+                // 兼容旧同步模式
+                this.showStatus('分析完成！', 'success');
+                this.onAnalysisComplete(resp);
+            }
             
         } catch (error) {
             console.error('上传失败:', error);
             this.showStatus(`分析失败: ${error.message}`, 'error');
         }
+    }
+
+    async pollJob(jobId) {
+        // 简单轮询：每2秒查一次，最大等待15分钟
+        const maxTries = 450; // 2s * 450 ≈ 900s
+        for (let i = 0; i < maxTries; i++) {
+            try {
+                const r = await fetch(`/analyze/video/status?job_id=${jobId}`);
+                if (!r.ok) throw new Error(`status ${r.status}`);
+                const j = await r.json();
+                if (j.status === 'done') return j.result;
+                if (j.status === 'error') throw new Error(j.error || '后台任务失败');
+                this.showStatus(`后台处理中… 进度: ${j.progress || 0} 帧`, 'processing');
+            } catch (e) {
+                console.warn('轮询失败，重试中', e);
+            }
+            await new Promise(res => setTimeout(res, 2000));
+        }
+        throw new Error('等待超时');
     }
 
     showStatus(message, type) {

@@ -103,8 +103,15 @@ class JsonOutputModule {
             }
         } else {
             console.error('JSON元素未找到，等待DOM创建...');
-            // 如果元素还没创建，等待一下再试
-            setTimeout(() => this.updateJsonContent(data), 200);
+            // 如果元素还没创建，等待一下再试，最多重试5次
+            if (!this._retryCount) this._retryCount = 0;
+            if (this._retryCount < 5) {
+                this._retryCount++;
+                setTimeout(() => this.updateJsonContent(data), 500);
+            } else {
+                console.error('JSON元素创建失败，已达到最大重试次数');
+                this._retryCount = 0; // 重置计数器
+            }
         }
     }
 

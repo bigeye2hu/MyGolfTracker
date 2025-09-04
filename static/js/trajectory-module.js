@@ -32,6 +32,27 @@ class TrajectoryModule {
             return;
         }
 
+        // 计算Canvas尺寸，保持视频宽高比
+        const videoInfo = data.video_info || {};
+        const videoWidth = videoInfo.width || 720;
+        const videoHeight = videoInfo.height || 1280;
+        const videoAspectRatio = videoWidth / videoHeight;
+        
+        // 设置Canvas最大尺寸
+        const maxCanvasWidth = 800;
+        const maxCanvasHeight = 400;
+        
+        let canvasWidth, canvasHeight;
+        if (videoAspectRatio > 1) {  // 横屏视频
+            canvasWidth = Math.min(maxCanvasWidth, Math.floor(maxCanvasHeight * videoAspectRatio));
+            canvasHeight = maxCanvasHeight;
+        } else {  // 竖屏视频
+            canvasHeight = Math.min(maxCanvasHeight, Math.floor(maxCanvasWidth / videoAspectRatio));
+            canvasWidth = Math.floor(canvasHeight * videoAspectRatio);
+        }
+
+        console.log(`视频尺寸: ${videoWidth}×${videoHeight}, Canvas尺寸: ${canvasWidth}×${canvasHeight}, 宽高比: ${videoAspectRatio.toFixed(3)}`);
+
         const trajectoryChart = document.createElement('div');
         trajectoryChart.className = 'trajectory-chart';
         trajectoryChart.id = 'trajectoryChart';
@@ -50,7 +71,12 @@ class TrajectoryModule {
                     <input type="radio" name="trajectoryType" value="comparison"> 三线对比
                 </label>
             </div>
-            <canvas id="trajectoryCanvas" width="800" height="400"></canvas>
+            <div class="canvas-container" style="text-align: center; margin: 10px 0;">
+                <canvas id="trajectoryCanvas" width="${canvasWidth}" height="${canvasHeight}" style="border: 1px solid #ddd; border-radius: 4px;"></canvas>
+                <div style="margin-top: 5px; font-size: 12px; color: #666;">
+                    视频尺寸: ${videoWidth} × ${videoHeight} | Canvas: ${canvasWidth} × ${canvasHeight}
+                </div>
+            </div>
         `;
 
         clubHeadInfo.appendChild(trajectoryChart);

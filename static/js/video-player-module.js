@@ -34,10 +34,24 @@ class VideoPlayerModule {
             videoSection.innerHTML = `
                 <h3>🎥 动态视频分析 - 实时显示杆头点位</h3>
                 <div class="video-container">
-                    <video id="videoPlayer" controls style="width: 100%; max-width: 800px; height: auto;">
+                    <video id="videoPlayer" controls style="width: 100%; max-width: 800px; height: auto;" preload="metadata" playsinline>
                         您的浏览器不支持视频播放
                     </video>
                     <canvas id="overlayCanvas" class="overlay-canvas"></canvas>
+                    <div id="videoInfo" style="margin-top: 10px; font-size: 12px; color: #666;">
+                        视频信息将在这里显示
+                    </div>
+                    <div id="formatWarning" style="margin-top: 10px; padding: 10px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; display: none;">
+                        <strong>⚠️ 视频格式提示:</strong> 如果视频显示异常，请尝试将MOV文件转换为MP4格式。推荐使用H.264编码的MP4文件以获得最佳兼容性。
+                        <br><br>
+                        <strong>🔧 解决方案:</strong>
+                        <ul style="margin: 5px 0; padding-left: 20px;">
+                            <li><strong>推荐：</strong><a href="/convert/test-page" target="_blank" style="color: #007bff; text-decoration: none;">使用我们的转换服务</a> - 一键转换，简单快捷</li>
+                            <li>使用FFmpeg转换: <code>ffmpeg -i input.mov -c:v libx264 output.mp4</code></li>
+                            <li>使用在线转换工具 (CloudConvert, Convertio等)</li>
+                            <li>使用视频编辑软件重新导出为MP4格式</li>
+                        </ul>
+                    </div>
                 </div>
                 <div class="video-controls">
                     <button id="loadVideoBtn" class="btn btn-primary">加载上传的视频</button>
@@ -86,15 +100,67 @@ class VideoPlayerModule {
         this.canvasContext = this.overlayCanvas.getContext('2d');
         
         // 设置视频源
-        const currentVideoFile = window.uploadModule.getCurrentVideoFile();
+        console.log('检查uploadModule:', window.uploadModule);
+        const currentVideoFile = window.uploadModule ? window.uploadModule.getCurrentVideoFile() : null;
+        console.log('获取到的视频文件:', currentVideoFile);
+        
         if (currentVideoFile) {
-            console.log('设置视频源:', currentVideoFile.name);
-            const videoUrl = URL.createObjectURL(currentVideoFile);
-            this.videoPlayer.src = videoUrl;
+            console.log('设置视频源:', currentVideoFile.name, currentVideoFile.type, currentVideoFile.size);
+            
+            // 验证视频文件
+            console.log('视频文件验证:', {
+                name: currentVideoFile.name,
+                type: currentVideoFile.type,
+                size: currentVideoFile.size,
+                lastModified: currentVideoFile.lastModified
+            });
+            
+            // 检查文件类型
+            if (!currentVideoFile.type.startsWith('video/')) {
+                console.warn('文件类型可能不是视频:', currentVideoFile.type);
+            }
+            
+            // 检查文件大小
+            if (currentVideoFile.size === 0) {
+                console.error('视频文件大小为0，可能已损坏');
+                const videoInfo = document.getElementById('videoInfo');
+                if (videoInfo) {
+                    videoInfo.innerHTML = '<span style="color: red;">❌ 视频文件大小为0，可能已损坏</span>';
+                }
+                return;
+            }
+            
+            // 清理之前的URL
+            if (this.videoPlayer.src && this.videoPlayer.src.startsWith('blob:')) {
+                URL.revokeObjectURL(this.videoPlayer.src);
+            }
+            
+            try {
+                const videoUrl = URL.createObjectURL(currentVideoFile);
+                console.log('创建的视频URL:', videoUrl);
+                this.videoPlayer.src = videoUrl;
+                
+                // 添加加载状态监听
+                this.videoPlayer.addEventListener('loadstart', () => {
+                    console.log('开始加载视频');
+                });
+                
+                this.videoPlayer.addEventListener('loadeddata', () => {
+                    console.log('视频数据加载完成');
+                });
+                
+            } catch (error) {
+                console.error('创建视频URL失败:', error);
+                const videoInfo = document.getElementById('videoInfo');
+                if (videoInfo) {
+                    videoInfo.innerHTML = '<span style="color: red;">❌ 无法创建视频URL</span>';
+                }
+            }
             
             // 监听视频加载完成
             this.videoPlayer.addEventListener('loadedmetadata', () => {
                 console.log('视频元数据加载完成');
+                this.updateVideoInfo();
                 this.resizeCanvas();
                 this.updateOverlay();
             });
@@ -106,9 +172,54 @@ class VideoPlayerModule {
             
             this.videoPlayer.addEventListener('error', (e) => {
                 console.error('视频加载错误:', e);
+                console.error('视频错误详情:', {
+                    error: this.videoPlayer.error,
+                    networkState: this.videoPlayer.networkState,
+                    readyState: this.videoPlayer.readyState,
+                    src: this.videoPlayer.src
+                });
+                
+                // 显示错误信息给用户
+                const videoInfo = document.getElementById('videoInfo');
+                if (videoInfo) {
+                    videoInfo.innerHTML = '<span style="color: red;">❌ 视频加载失败，请检查文件格式</span>';
+                }
             });
         } else {
             console.error('没有找到上传的视频文件');
+            console.log('尝试从文件输入元素获取视频文件...');
+            
+            // 备用方法：直接从文件输入元素获取
+            const fileInput = document.getElementById('videoFileInput');
+            if (fileInput && fileInput.files && fileInput.files[0]) {
+                const file = fileInput.files[0];
+                console.log('从文件输入获取到视频文件:', file.name);
+                
+                // 清理之前的URL
+                if (this.videoPlayer.src && this.videoPlayer.src.startsWith('blob:')) {
+                    URL.revokeObjectURL(this.videoPlayer.src);
+                }
+                
+                try {
+                    const videoUrl = URL.createObjectURL(file);
+                    console.log('备用方法创建的视频URL:', videoUrl);
+                    this.videoPlayer.src = videoUrl;
+                } catch (error) {
+                    console.error('备用方法创建视频URL失败:', error);
+                    const videoInfo = document.getElementById('videoInfo');
+                    if (videoInfo) {
+                        videoInfo.innerHTML = '<span style="color: red;">❌ 备用方法无法创建视频URL</span>';
+                    }
+                }
+                
+                this.videoPlayer.addEventListener('loadedmetadata', () => {
+                    console.log('视频元数据加载完成（备用方法）');
+                    this.resizeCanvas();
+                    this.updateOverlay();
+                });
+            } else {
+                console.error('文件输入元素也没有视频文件');
+            }
         }
         
         // 设置Canvas尺寸
@@ -233,6 +344,51 @@ class VideoPlayerModule {
             this.canvasContext.fillStyle = '#00ff00';
             this.canvasContext.font = 'bold 14px Arial';
             this.canvasContext.fillText(`${Math.round(detection.confidence * 100)}%`, x + 30, y - 10);
+        }
+    }
+
+    updateVideoInfo() {
+        if (!this.videoPlayer) return;
+        
+        const videoInfo = document.getElementById('videoInfo');
+        const formatWarning = document.getElementById('formatWarning');
+        
+        if (videoInfo) {
+            const width = this.videoPlayer.videoWidth;
+            const height = this.videoPlayer.videoHeight;
+            const duration = this.videoPlayer.duration;
+            const currentFile = window.uploadModule ? window.uploadModule.getCurrentVideoFile() : null;
+            
+            let info = `视频尺寸: ${width} × ${height}`;
+            if (duration && !isNaN(duration)) {
+                info += ` | 时长: ${duration.toFixed(1)}秒`;
+            }
+            if (currentFile) {
+                info += ` | 文件: ${currentFile.name} (${currentFile.type})`;
+            }
+            
+            videoInfo.textContent = info;
+            console.log('视频信息更新:', info);
+            
+            // 检查是否需要显示格式警告
+            if (formatWarning && currentFile) {
+                const fileName = currentFile.name.toLowerCase();
+                const fileType = currentFile.type.toLowerCase();
+                
+                // 如果是MOV文件，显示格式警告
+                if (fileName.endsWith('.mov') || fileType.includes('quicktime')) {
+                    formatWarning.style.display = 'block';
+                    console.log('显示MOV格式警告');
+                } else {
+                    formatWarning.style.display = 'none';
+                }
+            }
+            
+            // 如果视频加载失败，也显示格式警告
+            if (formatWarning && this.videoPlayer.error) {
+                formatWarning.style.display = 'block';
+                console.log('视频加载失败，显示格式警告');
+            }
         }
     }
 

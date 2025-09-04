@@ -4,7 +4,7 @@ from fastapi.responses import HTMLResponse
 import os
 import tempfile
 import shutil
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Any
 import threading
 import uuid
 import time
@@ -24,6 +24,19 @@ router = APIRouter()
 
 # 简易后台任务存储
 _JOB_STORE: Dict[str, Dict] = {}
+
+# 分析结果存储
+_ANALYSIS_RESULTS: Dict[str, Dict[str, Any]] = {}
+
+# 转换任务存储
+_CONVERSION_JOBS: Dict[str, Dict] = {}
+
+# 服务器资源监控
+_SERVER_STATUS = {
+    "active_conversions": 0,
+    "max_concurrent_conversions": 3,  # 限制并发转换数量
+    "server_load": "normal"
+}
 
 def _analyze_video_job(job_id: str, video_path: str) -> None:
     try:
@@ -277,47 +290,79 @@ async def analyze(
 
     # 构建 golftrainer 兼容的响应格式
     response = {
-        "version": 1.0,
-        "video_spec": {
-            "height": video_spec["height"],
-            "width": video_spec["width"],
-            "num_frames": video_spec["num_frames"],
-            "fps": video_spec["fps"],
-            "scale": 100,
-            "rotate": ""
-        },
-        "video_input": {
-            "fname": file.filename or "video.mp4",
-            "size": 0  # 实际大小未知
-        },
-        "num_frames": video_spec["num_frames"],
-        "pose_result": {
-            "poses": poses,
-            "handed": "RightHanded" if handed.lower() == "right" else "LeftHanded"
-        },
-        "club_head_result": {
-            "norm_points": optimized_trajectory,
-            "algos": ["YOLOv8_Optimized"] * len(optimized_trajectory),
-            "quality_scores": quality_scores,
-            "trajectory_stats": trajectory_stats
-        },
-        "mp_result": {
-            "landmarks": _get_mp_landmark_names(),
-            "norm_points": landmarks_list
-        },
-        "swing_analysis": {
-            "phases": phases,
-            "key_frames": phases.get("key_frames", {}),
-            "summary": phases.get("summary", {})
+        "golftrainer_analysis": {
+            "basic_info": {
+                "version": 1.0,
+                "num_frames": video_spec["num_frames"],
+                "video_spec": {
+                    "height": video_spec["height"],
+                    "width": video_spec["width"],
+                    "num_frames": video_spec["num_frames"],
+                    "fps": video_spec["fps"],
+                    "scale": 100,
+                    "rotate": ""
+                }
+            },
+            "mp_result": {
+                "landmarks": _get_mp_landmark_names(),
+                "landmarks_count": len(_get_mp_landmark_names())
+            },
+            "pose_result": {
+                "poses": poses,
+                "handed": "RightHanded" if handed.lower() == "right" else "LeftHanded",
+                "poses_count": len(poses)
+            },
+            "club_head_result": {
+                "trajectory_points": optimized_trajectory,  # 修正字段名以匹配Golftrainer格式
+                "valid_points_count": trajectory_stats.get("valid_points", len(optimized_trajectory)),
+                "total_points_count": trajectory_stats.get("total_points", len(optimized_trajectory))
+            },
+            "trajectory_analysis": {
+                "x_range": {
+                    "min": min([p[0] for p in optimized_trajectory if p[0] != 0], default=0.0),
+                    "max": max([p[0] for p in optimized_trajectory if p[0] != 0], default=0.0)
+                },
+                "y_range": {
+                    "min": min([p[1] for p in optimized_trajectory if p[1] != 0], default=0.0),
+                    "max": max([p[1] for p in optimized_trajectory if p[1] != 0], default=0.0)
+                },
+                "total_distance": _calculate_trajectory_distance(optimized_trajectory),
+                "average_movement_per_frame": _calculate_trajectory_distance(optimized_trajectory) / max(len(optimized_trajectory), 1)
+            },
+            "data_frames": {
+                "mp_data_frame": {
+                    "shape": [len(landmarks_list), len(_get_mp_landmark_names()) * 4],  # x,y,visibility,presence
+                    "columns_count": len(_get_mp_landmark_names()) * 4,
+                    "sample_data": landmarks_list[0][:10] if landmarks_list and landmarks_list[0] else []
+                },
+                "norm_data_frame": {
+                    "shape": [len(landmarks_list), len(_get_mp_landmark_names()) * 2],  # x,y only
+                    "columns_count": len(_get_mp_landmark_names()) * 2,
+                    "sample_data": [landmarks_list[0][i] for i in range(0, min(10, len(landmarks_list[0])), 2)] if landmarks_list and landmarks_list[0] else []
+                }
+            },
+            "sample_trajectory": {
+                "first_20_points": optimized_trajectory[:20]
+            }
         }
     }
 
-    # 添加 iOS 兼容的关键字段
-    response["pose_result"]["poses_count"] = 1
+    # 生成结果ID并存储结果
+    result_id = str(uuid.uuid4())
+    _ANALYSIS_RESULTS[result_id] = {
+        "result": response,
+        "timestamp": time.time(),
+        "video_info": {
+            "filename": file.filename or "video.mp4",
+            "width": video_spec["width"],
+            "height": video_spec["height"],
+            "fps": video_spec["fps"],
+            "num_frames": video_spec["num_frames"]
+        }
+    }
     
-    # 移除 phases 字典中的嵌套信息，避免重复
-    clean_phases = {k: v for k, v in phases.items() if k not in ["key_frames", "summary"]}
-    response["swing_analysis"]["phases"] = clean_phases
+    # 添加可视化URL到响应中
+    response["visualization_url"] = f"/analyze/visualize/{result_id}"
     
     return response
 
@@ -334,6 +379,544 @@ def _get_mp_landmark_names() -> List[str]:
         "left_knee", "right_knee", "left_ankle", "right_ankle",
         "left_heel", "right_heel", "left_foot_index", "right_foot_index"
     ]
+
+
+def _calculate_trajectory_distance(trajectory: List[List[float]]) -> float:
+    """计算轨迹总距离"""
+    if len(trajectory) < 2:
+        return 0.0
+    
+    total_distance = 0.0
+    for i in range(1, len(trajectory)):
+        prev_point = trajectory[i-1]
+        curr_point = trajectory[i]
+        
+        # 跳过无效点 (0,0)
+        if prev_point[0] == 0 and prev_point[1] == 0:
+            continue
+        if curr_point[0] == 0 and curr_point[1] == 0:
+            continue
+            
+        # 计算欧几里得距离
+        dx = curr_point[0] - prev_point[0]
+        dy = curr_point[1] - prev_point[1]
+        distance = (dx * dx + dy * dy) ** 0.5
+        total_distance += distance
+    
+    return total_distance
+
+
+def _clean_json_data(data):
+    """递归清理JSON数据中的NaN和无穷大值"""
+    if isinstance(data, dict):
+        return {key: _clean_json_data(value) for key, value in data.items()}
+    elif isinstance(data, list):
+        return [_clean_json_data(item) for item in data]
+    elif isinstance(data, float):
+        if data != data or data == float('inf') or data == float('-inf'):  # NaN or inf
+            return 0.0
+        return data
+    elif isinstance(data, np.floating):
+        if np.isnan(data) or np.isinf(data):
+            return 0.0
+        return float(data)
+    else:
+        return data
+
+
+def _check_video_compatibility(video_path: str) -> dict:
+    """检查视频兼容性"""
+    try:
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            return {"compatible": False, "error": "无法打开视频文件"}
+        
+        # 获取视频信息
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fourcc = int(cap.get(cv2.CAP_PROP_FOURCC))
+        fourcc_str = ''.join([chr((fourcc >> 8 * i) & 0xFF) for i in range(4)])
+        
+        cap.release()
+        
+        # 检查编码格式兼容性
+        compatible_formats = ['h264', 'H264', 'avc1', 'AVC1']
+        is_compatible = fourcc_str.lower() in [fmt.lower() for fmt in compatible_formats]
+        
+        return {
+            "compatible": is_compatible,
+            "video_info": {
+                "width": width,
+                "height": height,
+                "fps": fps,
+                "frame_count": frame_count,
+                "codec": fourcc_str,
+                "aspect_ratio": width / height if height > 0 else 0
+            },
+            "compatibility": {
+                "browser_playback": is_compatible,
+                "backend_processing": True,
+                "recommended_format": "H.264 encoded MP4" if not is_compatible else "Current format is compatible"
+            }
+        }
+        
+    except Exception as e:
+        return {"compatible": False, "error": str(e)}
+
+
+@router.get("/visualize/{result_id}")
+async def get_visualization_page(result_id: str):
+    """返回分析结果可视化页面"""
+    if result_id not in _ANALYSIS_RESULTS:
+        raise HTTPException(status_code=404, detail="分析结果未找到或已过期")
+    
+    result_data = _ANALYSIS_RESULTS[result_id]
+    analysis_result = result_data["result"]
+    video_info = result_data["video_info"]
+    
+    # 提取轨迹数据
+    trajectory_points = analysis_result["golftrainer_analysis"]["club_head_result"]["trajectory_points"]
+    
+    # 计算Canvas尺寸，保持视频宽高比
+    video_width = video_info["width"]
+    video_height = video_info["height"]
+    video_aspect_ratio = video_width / video_height
+    
+    # 设置Canvas最大尺寸
+    max_canvas_width = 800
+    max_canvas_height = 600
+    
+    # 根据视频宽高比计算Canvas尺寸，保持宽高比
+    if video_aspect_ratio > 1:  # 横屏视频
+        canvas_width = min(max_canvas_width, int(max_canvas_height * video_aspect_ratio))
+        canvas_height = max_canvas_height
+    else:  # 竖屏视频
+        canvas_height = min(max_canvas_height, int(max_canvas_width / video_aspect_ratio))
+        canvas_width = int(canvas_height * video_aspect_ratio)
+    
+    # 生成可视化页面HTML
+    html_content = f"""
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GolfTracker 分析结果可视化</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }}
+        .container {{
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }}
+        .header {{
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }}
+        .header h1 {{
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: 300;
+        }}
+        .header p {{
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+            font-size: 1.1em;
+        }}
+        .content {{
+            padding: 30px;
+        }}
+        .video-info {{
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }}
+        .video-info h3 {{
+            margin-top: 0;
+            color: #333;
+        }}
+        .info-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }}
+        .info-item {{
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            border-left: 4px solid #667eea;
+        }}
+        .info-label {{
+            font-weight: 600;
+            color: #666;
+            font-size: 0.9em;
+        }}
+        .info-value {{
+            font-size: 1.2em;
+            color: #333;
+            margin-top: 5px;
+        }}
+        .trajectory-section {{
+            margin-bottom: 30px;
+        }}
+        .trajectory-section h3 {{
+            color: #333;
+            margin-bottom: 20px;
+        }}
+        .canvas-container {{
+            text-align: center;
+            margin: 20px 0;
+        }}
+        .trajectory-canvas {{
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            background: #fafafa;
+            display: block;
+            margin: 0 auto;
+        }}
+        .canvas-info {{
+            margin-top: 10px;
+            font-size: 12px;
+            color: #666;
+            font-family: monospace;
+        }}
+        .frame-controls {{
+            text-align: center;
+            margin: 20px 0;
+        }}
+        .frame-controls button {{
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 0 5px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }}
+        .frame-controls button:hover {{
+            background: #5a6fd8;
+        }}
+        .frame-controls button:disabled {{
+            background: #ccc;
+            cursor: not-allowed;
+        }}
+        .frame-info {{
+            text-align: center;
+            margin: 15px 0;
+            font-size: 16px;
+            color: #666;
+        }}
+        .json-section {{
+            margin-top: 30px;
+        }}
+        .json-section h3 {{
+            color: #333;
+            margin-bottom: 15px;
+        }}
+        .json-container {{
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+        }}
+        .json-content {{
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            color: #333;
+            white-space: pre-wrap;
+        }}
+        .download-btn {{
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 15px;
+        }}
+        .download-btn:hover {{
+            background: #218838;
+        }}
+        .stats-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }}
+        .stat-card {{
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid #e0e0e0;
+        }}
+        .stat-value {{
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }}
+        .stat-label {{
+            color: #666;
+            margin-top: 5px;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏌️ GolfTracker 分析结果</h1>
+            <p>视频分析可视化 - {video_info['filename']}</p>
+        </div>
+        
+        <div class="content">
+            <div class="video-info">
+                <h3>📹 视频信息</h3>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <div class="info-label">文件名</div>
+                        <div class="info-value">{video_info['filename']}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">分辨率</div>
+                        <div class="info-value">{video_info['width']} × {video_info['height']}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">帧率</div>
+                        <div class="info-value">{video_info['fps']} FPS</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">总帧数</div>
+                        <div class="info-value">{video_info['num_frames']} 帧</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value">{len(trajectory_points)}</div>
+                    <div class="stat-label">轨迹点数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{analysis_result['golftrainer_analysis']['club_head_result']['valid_points_count']}</div>
+                    <div class="stat-label">有效检测</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{(analysis_result['golftrainer_analysis']['club_head_result']['valid_points_count'] / analysis_result['golftrainer_analysis']['club_head_result']['total_points_count'] * 100):.1f}%</div>
+                    <div class="stat-label">检测率</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{analysis_result['golftrainer_analysis']['trajectory_analysis']['total_distance']:.2f}</div>
+                    <div class="stat-label">总距离</div>
+                </div>
+            </div>
+            
+            <div class="trajectory-section">
+                <h3>🎯 杆头轨迹可视化</h3>
+                <div class="canvas-container">
+                    <canvas id="trajectoryCanvas" class="trajectory-canvas" width="{canvas_width}" height="{canvas_height}"></canvas>
+                    <div class="canvas-info">
+                        <span>视频尺寸: {video_width} × {video_height} | Canvas: {canvas_width} × {canvas_height}</span>
+                    </div>
+                </div>
+                
+                <div class="frame-controls">
+                    <button id="prevFrame" onclick="changeFrame(-1)">⬅️ 上一帧</button>
+                    <button id="playPause" onclick="togglePlay()">▶️ 播放</button>
+                    <button id="nextFrame" onclick="changeFrame(1)">下一帧 ➡️</button>
+                </div>
+                
+                <div class="frame-info">
+                    <span id="frameInfo">帧 1 / {len(trajectory_points)}</span>
+                    <span id="pointInfo" style="margin-left: 20px;"></span>
+                </div>
+            </div>
+            
+            <div class="json-section">
+                <h3>📄 完整分析结果 (JSON)</h3>
+                <button class="download-btn" onclick="downloadJSON()">💾 下载JSON文件</button>
+                <div class="json-container">
+                    <div class="json-content" id="jsonContent"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 轨迹数据
+        const trajectoryData = {json.dumps(trajectory_points, ensure_ascii=False)};
+        const videoInfo = {json.dumps(video_info, ensure_ascii=False)};
+        const fullResult = {json.dumps(analysis_result, ensure_ascii=False, indent=2)};
+        
+        // 显示JSON内容
+        document.getElementById('jsonContent').textContent = JSON.stringify(fullResult, null, 2);
+        
+        // 画布设置
+        const canvas = document.getElementById('trajectoryCanvas');
+        const ctx = canvas.getContext('2d');
+        const canvasWidth = {canvas_width};
+        const canvasHeight = {canvas_height};
+        
+        // 设置Canvas实际尺寸
+        canvas.width = canvasWidth;
+        canvas.height = canvasHeight;
+        
+        let currentFrame = 0;
+        let isPlaying = false;
+        let playInterval;
+        
+        // 绘制轨迹
+        function drawTrajectory() {{
+            ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+            
+            // 绘制背景网格
+            ctx.strokeStyle = '#f0f0f0';
+            ctx.lineWidth = 1;
+            for (let i = 0; i <= 10; i++) {{
+                const x = (canvasWidth / 10) * i;
+                const y = (canvasHeight / 10) * i;
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvasHeight);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvasWidth, y);
+                ctx.stroke();
+            }}
+            
+            // 绘制完整轨迹线
+            ctx.strokeStyle = '#e0e0e0';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            for (let i = 0; i < trajectoryData.length; i++) {{
+                const point = trajectoryData[i];
+                if (point[0] !== 0 || point[1] !== 0) {{
+                    const x = point[0] * canvasWidth;
+                    const y = point[1] * canvasHeight;
+                    if (i === 0) {{
+                        ctx.moveTo(x, y);
+                    }} else {{
+                        ctx.lineTo(x, y);
+                    }}
+                }}
+            }}
+            ctx.stroke();
+            
+            // 绘制已走过的轨迹（高亮）
+            ctx.strokeStyle = '#667eea';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            for (let i = 0; i <= currentFrame; i++) {{
+                const point = trajectoryData[i];
+                if (point[0] !== 0 || point[1] !== 0) {{
+                    const x = point[0] * canvasWidth;
+                    const y = point[1] * canvasHeight;
+                    if (i === 0) {{
+                        ctx.moveTo(x, y);
+                    }} else {{
+                        ctx.lineTo(x, y);
+                    }}
+                }}
+            }}
+            ctx.stroke();
+            
+            // 绘制当前帧的点
+            if (currentFrame < trajectoryData.length) {{
+                const point = trajectoryData[currentFrame];
+                if (point[0] !== 0 || point[1] !== 0) {{
+                    const x = point[0] * canvasWidth;
+                    const y = point[1] * canvasHeight;
+                    
+                    // 绘制大圆点
+                    ctx.fillStyle = '#ff4757';
+                    ctx.beginPath();
+                    ctx.arc(x, y, 8, 0, 2 * Math.PI);
+                    ctx.fill();
+                    
+                    // 绘制边框
+                    ctx.strokeStyle = '#fff';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }}
+            }}
+            
+            // 更新信息显示
+            document.getElementById('frameInfo').textContent = `帧 ${{currentFrame + 1}} / ${{trajectoryData.length}}`;
+            if (currentFrame < trajectoryData.length) {{
+                const point = trajectoryData[currentFrame];
+                if (point[0] !== 0 || point[1] !== 0) {{
+                    document.getElementById('pointInfo').textContent = `位置: (${{point[0].toFixed(3)}}, ${{point[1].toFixed(3)}})`;
+                }} else {{
+                    document.getElementById('pointInfo').textContent = '未检测到杆头';
+                }}
+            }}
+        }}
+        
+        // 切换帧
+        function changeFrame(delta) {{
+            currentFrame = Math.max(0, Math.min(trajectoryData.length - 1, currentFrame + delta));
+            drawTrajectory();
+        }}
+        
+        // 播放/暂停
+        function togglePlay() {{
+            if (isPlaying) {{
+                clearInterval(playInterval);
+                isPlaying = false;
+                document.getElementById('playPause').textContent = '▶️ 播放';
+            }} else {{
+                isPlaying = true;
+                document.getElementById('playPause').textContent = '⏸️ 暂停';
+                playInterval = setInterval(() => {{
+                    if (currentFrame < trajectoryData.length - 1) {{
+                        currentFrame++;
+                        drawTrajectory();
+                    }} else {{
+                        togglePlay();
+                    }}
+                }}, 100); // 100ms间隔
+            }}
+        }}
+        
+        // 下载JSON
+        function downloadJSON() {{
+            const dataStr = JSON.stringify(fullResult, null, 2);
+            const dataBlob = new Blob([dataStr], {{type: 'application/json'}});
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'golftracker_analysis_result.json';
+            link.click();
+            URL.revokeObjectURL(url);
+        }}
+        
+        // 初始化
+        drawTrajectory();
+    </script>
+</body>
+</html>
+    """
+    
+    return HTMLResponse(content=html_content)
 
 
 @router.get("/server-test")
@@ -356,6 +939,30 @@ async def get_server_test_page():
             <div style="margin-top:8px;padding:8px 12px;border:1px solid #ddd;border-radius:8px;background:#f8f9fa;display:inline-block;color:#333;">
               <strong style="color:#2c3e50;">运行模式</strong>：CPU 增强 / 抽帧步长 <code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">1</code> / 长边≤<code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">960</code> / 推理分辨率 <code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">512</code>
             </div>
+            
+            <!-- 视频转换服务入口 -->
+            <div style="margin-top: 15px; padding: 16px 20px; border: 2px solid #667eea; border-radius: 10px; background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 15px;">
+                    <div style="flex: 1; min-width: 300px;">
+                        <h3 style="margin: 0 0 8px 0; color: #2c3e50; font-size: 16px; font-weight: 600;">
+                            🎥 视频格式转换服务
+                        </h3>
+                        <p style="margin: 0; color: #495057; font-size: 14px; line-height: 1.5;">
+                            如果您的视频文件格式不兼容或无法正常播放，可以使用我们的转换服务将视频转换为H.264格式
+                        </p>
+                    </div>
+                    <div style="flex-shrink: 0;">
+                        <a href="/convert/test-page" target="_blank" 
+                           style="display: inline-block; padding: 10px 20px; background: linear-gradient(135deg, #667eea, #764ba2); 
+                                  color: white; text-decoration: none; border-radius: 20px; font-weight: 600; 
+                                  transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);"
+                           onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(102, 126, 234, 0.4)'"
+                           onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(102, 126, 234, 0.3)'">
+                            🚀 转换视频格式
+                        </a>
+                    </div>
+                </div>
+            </div>
         </div>
         
         <div class="content">
@@ -370,9 +977,9 @@ async def get_server_test_page():
     <!-- 模块化组件 -->
     <script src="/static/js/upload-module.js?v=1.6"></script>
     <script src="/static/js/results-module.js?v=1.6"></script>
-    <script src="/static/js/trajectory-module.js?v=1.6"></script>
-    <script src="/static/js/video-player-module.js?v=1.6"></script>
-    <script src="/static/js/json-output-module.js?v=1.6"></script>
+    <script src="/static/js/trajectory-module.js?v=1.7"></script>
+    <script src="/static/js/video-player-module.js?v=2.2"></script>
+    <script src="/static/js/json-output-module.js?v=1.7"></script>
     <script src="/static/js/frame-analysis-module.js?v=1.6"></script>
     <script src="/static/js/main.js?v=1.6"></script>
 </body>
@@ -412,12 +1019,41 @@ async def analyze_video_test(video: UploadFile = File(...)):
             shutil.copyfileobj(video.file, tmp)
             tmp_path = tmp.name
 
+        # 检查视频兼容性
+        compatibility_info = _check_video_compatibility(tmp_path)
+        print(f"视频兼容性检查: {compatibility_info}")
+
         # 后台任务：生成 job_id 并启动线程处理
         job_id = str(uuid.uuid4())
-        _JOB_STORE[job_id] = {"status": "queued", "progress": 0, "filename": video.filename}
+        _JOB_STORE[job_id] = {
+            "status": "queued", 
+            "progress": 0, 
+            "filename": video.filename,
+            "compatibility": compatibility_info
+        }
         t = threading.Thread(target=_analyze_video_job, args=(job_id, tmp_path), daemon=True)
         t.start()
-        return {"job_id": job_id, "status": "queued"}
+        
+        response = {
+            "job_id": job_id, 
+            "status": "queued",
+            "compatibility": compatibility_info
+        }
+        
+        # 如果不兼容，添加警告信息和转换服务链接
+        if not compatibility_info.get("compatible", True):
+            response["warning"] = {
+                "message": "检测到视频格式可能不兼容浏览器播放",
+                "codec": compatibility_info.get("video_info", {}).get("codec", "unknown"),
+                "recommendation": "建议使用H.264编码的MP4文件以获得最佳兼容性",
+                "conversion_service": {
+                    "available": True,
+                    "url": "/convert/test-page",
+                    "description": "使用我们的转换服务将视频转换为兼容格式"
+                }
+            }
+        
+        return response
                 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
@@ -429,7 +1065,116 @@ async def analyze_video_status(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="job not found")
     if job.get("status") == "done":
-        return {"job_id": job_id, "status": "done", "result": job.get("result")}
+        # 清理结果中的NaN和无穷大值
+        result = job.get("result", {})
+        cleaned_result = _clean_json_data(result)
+        return {"job_id": job_id, "status": "done", "result": cleaned_result}
     if job.get("status") == "error":
         return {"job_id": job_id, "status": "error", "error": job.get("error")}
     return {"job_id": job_id, "status": job.get("status"), "progress": job.get("progress", 0)}
+
+
+@router.get("/supported-formats")
+async def get_supported_formats():
+    """返回支持的视频格式信息"""
+    return {
+        "title": "GolfTracker 支持的视频格式",
+        "description": "查看支持的视频格式和编码要求",
+        "compatible_formats": {
+            "H.264": {
+                "description": "最广泛支持的编码格式",
+                "file_extensions": [".mp4", ".mov"],
+                "browser_support": "优秀",
+                "recommended": True
+            },
+            "AVC1": {
+                "description": "H.264的变体，兼容性良好",
+                "file_extensions": [".mp4"],
+                "browser_support": "优秀",
+                "recommended": True
+            }
+        },
+        "incompatible_formats": {
+            "FMP4": {
+                "description": "分片MP4格式，浏览器支持有限",
+                "file_extensions": [".mov", ".mp4"],
+                "browser_support": "差",
+                "solution": "需要转换为H.264"
+            },
+            "H.265": {
+                "description": "新一代编码格式，浏览器支持有限",
+                "file_extensions": [".mp4", ".mov"],
+                "browser_support": "一般",
+                "solution": "需要转换为H.264"
+            },
+            "VP9": {
+                "description": "Google开发的编码格式",
+                "file_extensions": [".webm", ".mp4"],
+                "browser_support": "一般",
+                "solution": "需要转换为H.264"
+            }
+        },
+        "recommended_settings": {
+            "video_codec": "H.264 (libx264)",
+            "audio_codec": "AAC",
+            "container": "MP4",
+            "resolution": "720p 或 1080p",
+            "frame_rate": "30fps",
+            "quality": "中等质量"
+        },
+        "conversion_service": {
+            "available": True,
+            "endpoint": "/convert/video",
+            "description": "使用我们的转换服务将不兼容的视频转换为H.264格式"
+        }
+    }
+
+
+@router.get("/conversion-guide")
+async def get_conversion_guide():
+    """返回视频转换指导信息"""
+    return {
+        "title": "GolfTracker 视频格式转换指导",
+        "description": "将不兼容的视频格式转换为H.264编码的MP4格式",
+        "conversion_service": {
+            "name": "GolfTracker转换服务",
+            "description": "使用我们的专用转换服务",
+            "endpoint": "/convert/video",
+            "pros": ["专用服务", "高质量转换", "无需安装软件", "快速处理"],
+            "cons": ["需要重新上传", "服务器资源消耗"]
+        },
+        "external_methods": [
+            {
+                "name": "在线转换工具",
+                "description": "使用第三方在线转换工具",
+                "tools": [
+                    "CloudConvert (https://cloudconvert.com/mov-to-mp4)",
+                    "Convertio (https://convertio.co/mov-mp4/)",
+                    "Online-Convert (https://www.online-convert.com/)"
+                ],
+                "pros": ["无需安装软件", "简单易用"],
+                "cons": ["需要上传文件", "网络依赖", "隐私考虑"]
+            },
+            {
+                "name": "桌面软件",
+                "description": "使用免费桌面转换软件",
+                "tools": ["VLC Media Player", "HandBrake", "QuickTime Player"],
+                "pros": ["本地处理", "隐私安全", "完全控制"],
+                "cons": ["需要安装软件", "学习成本"]
+            }
+        ],
+        "recommended_settings": {
+            "video_codec": "libx264",
+            "audio_codec": "aac",
+            "quality": "medium (crf 23)",
+            "preset": "medium",
+            "web_optimization": "movflags +faststart"
+        },
+        "compatible_formats": ["H.264", "AVC1"],
+        "incompatible_formats": ["FMP4", "H.265", "VP9"],
+        "troubleshooting": {
+            "conversion_failed": "检查FFmpeg安装和文件权限",
+            "file_too_large": "降低质量设置或分辨率",
+            "playback_issues": "确认输出格式为H.264 MP4"
+        }
+    }

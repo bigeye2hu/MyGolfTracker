@@ -106,7 +106,10 @@ class UploadModule {
                 const r = await fetch(`/analyze/video/status?job_id=${jobId}`);
                 if (!r.ok) throw new Error(`status ${r.status}`);
                 const j = await r.json();
-                if (j.status === 'done') return j.result;
+                if (j.status === 'done') {
+                    // 将 job_id 一并返回，便于其他模块后续继续查询补充字段
+                    return Object.assign({ job_id: j.job_id }, j.result || {});
+                }
                 if (j.status === 'error') throw new Error(j.error || '后台任务失败');
                 this.showStatus(`后台处理中… 进度: ${j.progress || 0} 帧`, 'processing');
             } catch (e) {

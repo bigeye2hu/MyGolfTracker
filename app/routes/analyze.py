@@ -9,6 +9,8 @@ import threading
 import uuid
 import time
 import json
+import base64
+from datetime import datetime
 
 import numpy as np
 import cv2
@@ -170,10 +172,57 @@ def _analyze_video_job(job_id: str, video_path: str) -> None:
         }
         _JOB_STORE[job_id]["status"] = "done"
         _JOB_STORE[job_id]["result"] = result
+        
+        # 生成失败帧下载页面（在删除视频文件之前）
+        try:
+            # 将失败帧定义为：
+            # 1) 条目为 None；或
+            # 2) 条目是字典且 detected 为 False；或
+            # 3) 归一化坐标为 (0,0)
+            failure_frames = []
+            for i, det in enumerate(frame_detections):
+                if det is None:
+                    failure_frames.append(i)
+                    continue
+                if isinstance(det, dict):
+                    if not det.get("detected", False):
+                        failure_frames.append(i)
+                        continue
+                    nx = det.get("norm_x", None)
+                    ny = det.get("norm_y", None)
+                    if nx == 0 and ny == 0:
+                        failure_frames.append(i)
+            print(f"检测到 {len(failure_frames)} 个失败帧: {failure_frames[:10]}...")  # 只显示前10个
+            if failure_frames:
+                print(f"开始生成失败帧下载页面，任务ID: {job_id}")
+                failure_download_url = _generate_failure_frames_page(job_id, video_path, failure_frames)
+                print(f"失败帧下载页面生成完成: {failure_download_url}")
+                # 将下载链接写入结果，确保状态接口能返回给前端
+                try:
+                    result["failure_download_url"] = failure_download_url
+                    _JOB_STORE[job_id]["result"] = result
+                except Exception:
+                    pass
+                _JOB_STORE[job_id]["failure_download_url"] = failure_download_url
+            else:
+                print("没有失败帧，跳过下载页面生成")
+        except Exception as e:
+            print(f"生成失败帧下载页面时出错: {e}")
+            import traceback
+            traceback.print_exc()
+            # 不影响主要分析结果
+        
+        # 删除视频文件
+        try:
+            os.remove(video_path)
+            print(f"已删除临时视频文件: {video_path}")
+        except Exception as e:
+            print(f"删除临时视频文件失败: {e}")
+            
     except Exception as e:
         _JOB_STORE[job_id]["status"] = "error"
         _JOB_STORE[job_id]["error"] = str(e)
-    finally:
+        # 即使出错也要删除视频文件
         try:
             os.remove(video_path)
         except Exception:
@@ -1178,3 +1227,391 @@ async def get_conversion_guide():
             "playback_issues": "确认输出格式为H.264 MP4"
         }
     }
+
+
+def _generate_failure_frames_page(job_id: str, video_path: str, failure_frames: List[int]) -> str:
+    """生成失败帧下载页面并返回URL"""
+    try:
+        print(f"开始处理视频: {video_path}")
+        # 打开视频获取失败帧的图片
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            print(f"无法打开视频文件: {video_path}")
+            return None
+        
+        # 获取视频信息
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        print(f"视频信息: 总帧数={total_frames}, FPS={fps}")
+        
+        # 收集失败帧数据
+        failure_frame_data = []
+        print(f"开始处理 {len(failure_frames)} 个失败帧...")
+        for i, frame_num in enumerate(failure_frames):
+            if i % 5 == 0:  # 每5帧打印一次进度
+                print(f"处理进度: {i+1}/{len(failure_frames)} (帧 {frame_num})")
+            
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+            ret, frame = cap.read()
+            
+            if ret:
+                # 将帧转换为base64编码的图片
+                _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+                img_base64 = base64.b64encode(buffer).decode('utf-8')
+                
+                failure_frame_data.append({
+                    "frame_number": frame_num,
+                    "timestamp": frame_num / fps,
+                    "image_data": img_base64,
+                    "filename": f"failure_frame_{frame_num:03d}.jpg"
+                })
+            else:
+                print(f"警告: 无法读取第 {frame_num} 帧")
+        
+        cap.release()
+        
+        if not failure_frame_data:
+            print("没有成功提取到失败帧数据")
+            return None
+        
+        print(f"成功提取 {len(failure_frame_data)} 个失败帧，开始生成HTML...")
+        
+        # 生成HTML内容
+        html_content = _generate_failure_frames_html(failure_frame_data, job_id, len(failure_frames), total_frames)
+        print("HTML内容生成完成")
+        
+        # 保存HTML文件
+        html_filename = f"failure_frames_{job_id}.html"
+        html_path = os.path.join("static", html_filename)
+        
+        # 确保static目录存在
+        os.makedirs("static", exist_ok=True)
+        print(f"保存HTML文件到: {html_path}")
+        
+        with open(html_path, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        
+        print(f"HTML文件保存完成，返回URL: /static/{html_filename}")
+        return f"/static/{html_filename}"
+        
+    except Exception as e:
+        print(f"生成失败帧下载页面失败: {e}")
+        return None
+
+
+def _generate_failure_frames_html(failure_frame_data: List[Dict], job_id: str, failure_count: int, total_frames: int) -> str:
+    """生成失败帧下载页面的HTML内容"""
+    
+    failure_rate = (failure_count / total_frames) * 100
+    
+    html = f"""
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>检测失败帧下载 - Job {job_id[:8]}</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }}
+        
+        .container {{
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }}
+        
+        h1 {{
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.2em;
+        }}
+        
+        .summary {{
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+            border-left: 4px solid #dc3545;
+        }}
+        
+        .summary h3 {{
+            margin: 0 0 10px 0;
+            color: #2c3e50;
+        }}
+        
+        .summary p {{
+            margin: 5px 0;
+            color: #495057;
+        }}
+        
+        .failure-rate {{
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #dc3545;
+        }}
+        
+        .controls {{
+            text-align: center;
+            margin-bottom: 30px;
+        }}
+        
+        .btn {{
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            margin: 0 10px;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }}
+        
+        .btn:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }}
+        
+        .btn-secondary {{
+            background: linear-gradient(135deg, #6c757d, #495057);
+        }}
+        
+        .frames-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }}
+        
+        .frame-item {{
+            background: white;
+            border-radius: 10px;
+            padding: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            border: 2px solid #e9ecef;
+            transition: all 0.3s ease;
+        }}
+        
+        .frame-item:hover {{
+            border-color: #667eea;
+            transform: translateY(-2px);
+        }}
+        
+        .frame-item.selected {{
+            border-color: #28a745;
+            background: #f8fff9;
+        }}
+        
+        .frame-image {{
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }}
+        
+        .frame-info {{
+            text-align: center;
+        }}
+        
+        .frame-info h4 {{
+            margin: 0 0 5px 0;
+            color: #2c3e50;
+        }}
+        
+        .frame-info p {{
+            margin: 0;
+            color: #6c757d;
+            font-size: 14px;
+        }}
+        
+        .download-btn {{
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 15px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 10px;
+            transition: all 0.3s ease;
+        }}
+        
+        .download-btn:hover {{
+            background: #218838;
+            transform: translateY(-1px);
+        }}
+        
+        .select-all {{
+            margin-bottom: 20px;
+            text-align: center;
+        }}
+        
+        .select-all input[type="checkbox"] {{
+            margin-right: 10px;
+            transform: scale(1.2);
+        }}
+        
+        .select-all label {{
+            font-size: 16px;
+            font-weight: 600;
+            color: #2c3e50;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 检测失败帧下载工具</h1>
+        
+        <div class="summary">
+            <h3>📊 检测统计</h3>
+            <p><strong>任务ID:</strong> {job_id}</p>
+            <p><strong>总帧数:</strong> {total_frames} 帧</p>
+            <p><strong>失败帧数量:</strong> {failure_count} 帧</p>
+            <p><strong>失败率:</strong> <span class="failure-rate">{failure_rate:.1f}%</span></p>
+            <p><strong>生成时间:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            <p><strong>用途:</strong> 这些图片可用于模型训练数据增强，提高杆头检测准确率</p>
+        </div>
+        
+        <div class="controls">
+            <button class="btn" onclick="selectAll()">全选所有帧</button>
+            <button class="btn btn-secondary" onclick="clearSelection()">清除选择</button>
+            <button class="btn" onclick="downloadSelected()">下载选中帧</button>
+            <a href="/analyze/server-test" class="btn btn-secondary">返回主页面</a>
+        </div>
+        
+        <div class="select-all">
+            <input type="checkbox" id="selectAllCheckbox" onchange="toggleAllSelection()">
+            <label for="selectAllCheckbox">全选/取消全选</label>
+        </div>
+        
+        <div class="frames-grid">
+"""
+    
+    # 添加每个失败帧
+    for i, frame_data in enumerate(failure_frame_data):
+        html += f"""
+            <div class="frame-item" data-frame="{frame_data['frame_number']}">
+                <img src="data:image/jpeg;base64,{frame_data['image_data']}" 
+                     alt="Frame {frame_data['frame_number']}" 
+                     class="frame-image">
+                <div class="frame-info">
+                    <h4>第 {frame_data['frame_number']} 帧</h4>
+                    <p>时间: {frame_data['timestamp']:.2f}s</p>
+                    <p>文件名: {frame_data['filename']}</p>
+                    <button class="download-btn" onclick="downloadSingleFrame({i})">
+                        下载此帧
+                    </button>
+                </div>
+            </div>
+        """
+    
+    html += """
+        </div>
+    </div>
+
+    <script>
+        const failureFrames = """ + json.dumps(failure_frame_data) + """;
+        
+        function selectAll() {
+            const items = document.querySelectorAll('.frame-item');
+            items.forEach(item => {
+                item.classList.add('selected');
+            });
+            document.getElementById('selectAllCheckbox').checked = true;
+        }
+        
+        function clearSelection() {
+            const items = document.querySelectorAll('.frame-item');
+            items.forEach(item => {
+                item.classList.remove('selected');
+            });
+            document.getElementById('selectAllCheckbox').checked = false;
+        }
+        
+        function toggleAllSelection() {
+            const checkbox = document.getElementById('selectAllCheckbox');
+            if (checkbox.checked) {
+                selectAll();
+            } else {
+                clearSelection();
+            }
+        }
+        
+        function downloadSingleFrame(index) {
+            const frame = failureFrames[index];
+            downloadFrame(frame);
+        }
+        
+        function downloadSelected() {
+            const selectedItems = document.querySelectorAll('.frame-item.selected');
+            if (selectedItems.length === 0) {
+                alert('请先选择要下载的帧！');
+                return;
+            }
+            
+            selectedItems.forEach(item => {
+                const frameNumber = parseInt(item.dataset.frame);
+                const frame = failureFrames.find(f => f.frame_number === frameNumber);
+                if (frame) {
+                    downloadFrame(frame);
+                }
+            });
+        }
+        
+        function downloadFrame(frame) {
+            // 创建下载链接
+            const link = document.createElement('a');
+            link.href = 'data:image/jpeg;base64,' + frame.image_data;
+            link.download = frame.filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        // 点击帧项目切换选择状态
+        document.addEventListener('click', function(e) {
+            if (e.target.closest('.frame-item') && !e.target.closest('.download-btn')) {
+                const item = e.target.closest('.frame-item');
+                item.classList.toggle('selected');
+                updateSelectAllCheckbox();
+            }
+        });
+        
+        function updateSelectAllCheckbox() {
+            const totalItems = document.querySelectorAll('.frame-item').length;
+            const selectedItems = document.querySelectorAll('.frame-item.selected').length;
+            const checkbox = document.getElementById('selectAllCheckbox');
+            
+            if (selectedItems === 0) {
+                checkbox.checked = false;
+                checkbox.indeterminate = false;
+            } else if (selectedItems === totalItems) {
+                checkbox.checked = true;
+                checkbox.indeterminate = false;
+            } else {
+                checkbox.checked = false;
+                checkbox.indeterminate = true;
+            }
+        }
+    </script>
+</body>
+</html>
+"""
+    
+    return html

@@ -115,32 +115,21 @@ class YOLOv8Detector:
             if debug:
                 print(f"🎯 通过ID匹配找到杆头检测框: {len(club_head_boxes)} 个")
         
-        # 3. 如果没有找到杆头检测，尝试智能回退策略
+        # 3. 如果没有找到杆头检测，直接返回None（不使用回退策略）
         if len(club_head_boxes) == 0:
             if debug:
-                print("❌ 没有检测到杆头，尝试智能回退策略")
-            
-            # 智能回退：如果杆身置信度很高，且位置合理，则使用杆身
-            club_boxes = boxes[boxes[:, 5] == 0]  # 杆身检测
-            if len(club_boxes) > 0:
-                best_club_idx = int(np.argmax(club_boxes[:, 4]))
-                club_conf = club_boxes[best_club_idx, 4]
+                print("❌ 没有检测到杆头，返回None（禁用杆身/手部回退策略）")
                 
-                # 如果杆身置信度足够高（>0.1），则使用杆身
-                if club_conf > 0.1:
-                    x1, y1, x2, y2, conf, cls = club_boxes[best_club_idx]
-                    cls_id = int(cls)
-                    cls_name = names.get(cls_id, f"unknown_{cls_id}")
-                    cx = (x1 + x2) / 2.0
-                    cy = (y1 + y2) / 2.0
-                    
-                    if debug:
-                        print(f"🔄 回退到杆身: {cls_name} (ID:{cls_id}) - 置信度: {conf:.3f}")
-                    
-                    return safe_float(cx), safe_float(cy), safe_float(conf)
+                # 显示所有检测到的目标供调试
+                all_boxes = boxes
+                if len(all_boxes) > 0:
+                    print("🔍 当前帧检测到的所有目标:")
+                    for i, box in enumerate(all_boxes):
+                        x1, y1, x2, y2, conf, cls = box
+                        cls_id = int(cls)
+                        cls_name = names.get(cls_id, f"unknown_{cls_id}")
+                        print(f"  {i+1}. {cls_name} (ID:{cls_id}) - 置信度: {conf:.3f}")
             
-            if debug:
-                print("❌ 没有找到合适的检测结果")
             return None
         
         # 4. 在杆头检测结果中选择置信度最高的（即使置信度很低也优先使用杆头）

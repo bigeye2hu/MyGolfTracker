@@ -31,7 +31,8 @@ class MainController {
             'videoPlayerModule',
             'jsonOutputModule',
             'frameAnalysisModule',
-            'swingVisualizationModule'
+            'swingVisualizationModule',
+            'dualPlayerModule'
         ];
         
         console.log('检查模块加载状态...');

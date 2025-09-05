@@ -21,6 +21,7 @@ from analyzer.ffmpeg import iter_video_frames
 from analyzer.swing_analyzer import SwingAnalyzer
 from analyzer.trajectory_optimizer import TrajectoryOptimizer
 from analyzer.swing_state_machine import SwingStateMachine, SwingPhase
+from analyzer.strategy_manager import get_strategy_manager
 
 
 router = APIRouter()
@@ -41,7 +42,7 @@ _SERVER_STATUS = {
     "server_load": "normal"
 }
 
-def _analyze_video_job(job_id: str, video_path: str, resolution: str = "480", confidence: str = "0.01", iou: str = "0.7", max_det: str = "10") -> None:
+def _analyze_video_job(job_id: str, video_path: str, resolution: str = "480", confidence: str = "0.01", iou: str = "0.7", max_det: str = "10", optimization_strategy: str = "original") -> None:
     try:
         _JOB_STORE[job_id]["status"] = "running"
         detector = YOLOv8Detector()
@@ -147,20 +148,54 @@ def _analyze_video_job(job_id: str, video_path: str, resolution: str = "480", co
         
         # 清理轨迹数据
         norm_trajectory = clean_trajectory(norm_trajectory)
+        
+        # 轨迹数据格式已确认正确（List[List[float]]）
 
-        # 为了对比，我们也生成优化后的轨迹（但不使用）
+        # ===== 处理流程：YOLOv8原始检测 → 策略优化 → 双画面对比 =====
+        print(f"🎯 开始轨迹优化处理，用户选择策略: {optimization_strategy}")
+        
+        # 1. 保存原始YOLOv8检测结果（用于左画面）
+        original_trajectory = norm_trajectory.copy()
+        print(f"📊 原始轨迹数据: {len(original_trajectory)} 个点")
+        
+        # 2. 初始化策略管理器
         from analyzer.trajectory_optimizer import TrajectoryOptimizer
-        from analyzer.fast_motion_optimizer import FastMotionOptimizer
-        
-        # 使用标准优化器
         trajectory_optimizer = TrajectoryOptimizer()
-        optimized_trajectory, _ = trajectory_optimizer.optimize_trajectory(norm_trajectory)
-        optimized_trajectory = clean_trajectory(optimized_trajectory)
+        available_strategies = trajectory_optimizer.get_available_strategies()
         
-        # 使用快速移动优化器
-        fast_motion_optimizer = FastMotionOptimizer(confidence_threshold=0.3, velocity_threshold=0.15)
-        fast_motion_trajectory, _ = fast_motion_optimizer.optimize_trajectory(norm_trajectory)
-        fast_motion_trajectory = clean_trajectory(fast_motion_trajectory)
+        # 3. 为所有策略生成轨迹（用于对比和选择）
+        strategy_trajectories = {}
+        strategy_trajectories["original"] = original_trajectory  # 原始检测结果
+        
+        print(f"🔄 开始生成所有策略轨迹...")
+        for strategy_id, strategy_info in available_strategies.items():
+            # 处理所有策略，不只是real_开头的
+            if strategy_id != "original":  # 跳过原始检测
+                try:
+                    print(f"  🔍 处理策略: {strategy_info.name}")
+                    trajectory = trajectory_optimizer.optimize_with_strategy(norm_trajectory, strategy_id)
+                    strategy_trajectories[strategy_id] = clean_trajectory(trajectory)
+                    print(f"  ✅ 策略 {strategy_info.name} 生成成功")
+                except Exception as e:
+                    print(f"  ❌ 策略 {strategy_id} 生成失败: {e}")
+                    strategy_trajectories[strategy_id] = original_trajectory  # 失败时使用原始数据
+        
+        # 4. 确定用户选择的最终轨迹（用于右画面）
+        if optimization_strategy == "original":
+            final_trajectory = original_trajectory
+            strategy_name = "原始检测"
+        else:
+            final_trajectory = strategy_trajectories.get(optimization_strategy, original_trajectory)
+            strategy_info = available_strategies.get(optimization_strategy)
+            strategy_name = strategy_info.name if strategy_info else optimization_strategy
+        
+        print(f"🎯 最终选择: {strategy_name} (轨迹长度: {len(final_trajectory)})")
+        
+        # 为了向后兼容，保留原有的轨迹字段
+        optimized_trajectory = strategy_trajectories.get('real_trajectory_optimization', norm_trajectory)
+        
+        # 使用快速移动优化器（从策略中获取）
+        fast_motion_trajectory = strategy_trajectories.get('real_fast_motion', original_trajectory)
         
         # 挥杆状态分析
         print("🎯 开始挥杆状态分析...")
@@ -175,14 +210,32 @@ def _analyze_video_job(job_id: str, video_path: str, resolution: str = "480", co
             # 使用默认状态
             swing_phases = [SwingPhase.UNKNOWN] * len(norm_trajectory)
 
+        # 5. 构建结果字典，明确双画面数据来源
         result = {
             "total_frames": total_frames,
             "detected_frames": detected_frames,
             "detection_rate": round(detection_rate, 2),
             "avg_confidence": round(avg_confidence, 3),
-            "club_head_trajectory": norm_trajectory,  # 原始轨迹（归一化坐标）
-            "optimized_trajectory": optimized_trajectory,  # 标准优化后的轨迹
-            "fast_motion_trajectory": fast_motion_trajectory,  # 快速移动优化后的轨迹
+            
+            # ===== 双画面数据 =====
+            "left_view_trajectory": original_trajectory,    # 左画面：永远显示原始YOLOv8检测结果
+            "right_view_trajectory": final_trajectory,      # 右画面：用户选择的策略结果
+            
+            # ===== 向后兼容字段 =====
+            "club_head_trajectory": final_trajectory,       # 用户选择的最终轨迹
+            "original_trajectory": original_trajectory,     # 原始轨迹（归一化坐标）
+            "optimized_trajectory": optimized_trajectory,   # 标准优化后的轨迹
+            "fast_motion_trajectory": fast_motion_trajectory, # 快速移动优化后的轨迹
+            
+            # ===== 策略相关数据 =====
+            "strategy_trajectories": strategy_trajectories, # 所有策略的轨迹
+            "available_strategies": available_strategies,   # 可用策略信息
+            "selected_strategy": {
+                "id": optimization_strategy,
+                "name": strategy_name
+            },
+            
+            # ===== 其他数据 =====
             "frame_detections": frame_detections,
             "swing_phases": [phase.value for phase in swing_phases],  # 挥杆状态序列
             "video_info": {
@@ -339,14 +392,18 @@ async def analyze(
         
         video_spec["num_frames"] = frame_index
 
-        # 禁用轨迹优化，直接使用原始数据
-        # optimized_trajectory, quality_scores = trajectory_optimizer.optimize_trajectory(trajectory)
-        # trajectory_stats = trajectory_optimizer.get_trajectory_statistics(optimized_trajectory)
+        # 轨迹优化 - 使用策略管理库
+        trajectory_optimizer = TrajectoryOptimizer()
         
-        # 使用原始轨迹数据
-        optimized_trajectory = trajectory
-        quality_scores = [1.0] * len(trajectory)  # 原始数据质量评分设为1.0
-        trajectory_stats = {"valid_points": len(trajectory), "total_points": len(trajectory), "coverage": 1.0}
+        # 标准优化
+        optimized_trajectory, quality_scores = trajectory_optimizer.optimize_trajectory(trajectory)
+        trajectory_stats = trajectory_optimizer.get_trajectory_statistics(optimized_trajectory)
+        
+        # 快速移动优化
+        fast_motion_trajectory, _ = trajectory_optimizer.optimize_with_strategy(trajectory, "fast_motion")
+        
+        # 获取所有可用策略信息
+        available_strategies = trajectory_optimizer.get_available_strategies()
 
         # 分析挥杆相位
         swing_analyzer = SwingAnalyzer(optimized_trajectory, video_spec, poses)
@@ -989,6 +1046,44 @@ async def get_visualization_page(result_id: str):
     return HTMLResponse(content=html_content)
 
 
+@router.get("/strategies")
+async def get_strategies():
+    """获取所有可用策略"""
+    try:
+        strategy_manager = get_strategy_manager()
+        # 只注册真实策略
+        from analyzer.real_strategies import register_real_strategies
+        register_real_strategies(strategy_manager)
+        
+        strategies = strategy_manager.get_all_strategies()
+        return {"strategies": strategies}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取策略失败: {str(e)}")
+
+@router.get("/strategies/{category}")
+async def get_strategies_by_category(category: str):
+    """按类别获取策略"""
+    try:
+        strategy_manager = get_strategy_manager()
+        # 只注册真实策略
+        from analyzer.real_strategies import register_real_strategies
+        register_real_strategies(strategy_manager)
+        
+        strategies = strategy_manager.get_strategies_by_category(category)
+        return {"strategies": strategies, "category": category}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取策略失败: {str(e)}")
+
+@router.get("/strategy-test")
+async def get_strategy_test_page():
+    """返回策略管理测试页面"""
+    try:
+        with open("static/strategy_test.html", "r", encoding="utf-8") as f:
+            html_content = f.read()
+        return HTMLResponse(content=html_content)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="策略测试页面未找到")
+
 @router.get("/server-test")
 async def get_server_test_page():
     """返回服务器端测试页面"""
@@ -1033,6 +1128,38 @@ async def get_server_test_page():
                     </div>
                 </div>
             </div>
+            
+            <!-- 策略管理入口 -->
+            <div style="margin-top: 15px; padding: 16px 20px; border: 2px solid #28a745; border-radius: 10px; background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 15px;">
+                    <div style="flex: 1; min-width: 300px;">
+                        <h3 style="margin: 0 0 8px 0; color: #2c3e50; font-size: 16px; font-weight: 600;">
+                            ⚙️ 轨迹优化策略管理
+                        </h3>
+                        <p style="margin: 0; color: #495057; font-size: 14px; line-height: 1.5;">
+                            管理和对比不同的轨迹优化算法，包括Savitzky-Golay滤波、卡尔曼滤波、线性插值等
+                        </p>
+                    </div>
+                    <div style="flex-shrink: 0; display: flex; gap: 10px;">
+                        <a href="/analyze/strategy-test" target="_blank" 
+                           style="display: inline-block; padding: 10px 20px; background: linear-gradient(135deg, #28a745, #20c997); 
+                                  color: white; text-decoration: none; border-radius: 20px; font-weight: 600; 
+                                  transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);"
+                           onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(40, 167, 69, 0.4)'"
+                           onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(40, 167, 69, 0.3)'">
+                            🎯 策略管理UI
+                        </a>
+                        <a href="/analyze/strategies" target="_blank" 
+                           style="display: inline-block; padding: 10px 20px; background: linear-gradient(135deg, #6c757d, #495057); 
+                                  color: white; text-decoration: none; border-radius: 20px; font-weight: 600; 
+                                  transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(108, 117, 125, 0.3);"
+                           onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(108, 117, 125, 0.4)'"
+                           onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(108, 117, 125, 0.3)'">
+                            📊 API数据
+                        </a>
+                    </div>
+                </div>
+            </div>
         </div>
         
         <div class="content">
@@ -1045,13 +1172,14 @@ async def get_server_test_page():
     </div>
 
     <!-- 模块化组件 -->
-    <script src="/static/js/upload-module.js?v=1.6"></script>
+            <script src="/static/js/upload-module.js?v=1.8"></script>
     <script src="/static/js/results-module.js?v=1.6"></script>
     <script src="/static/js/trajectory-module.js?v=1.7"></script>
     <script src="/static/js/video-player-module.js?v=2.2"></script>
     <script src="/static/js/json-output-module.js?v=1.8"></script>
     <script src="/static/js/frame-analysis-module.js?v=1.6"></script>
     <script src="/static/js/swing-visualization-module.js?v=1.0"></script>
+    <script src="/static/js/dual-player-module.js?v=1.5"></script>
     <script src="/static/js/main.js?v=1.6"></script>
 </body>
 </html>
@@ -1065,7 +1193,8 @@ async def analyze_video_test(
     resolution: str = Form("480"),
     confidence: str = Form("0.01"),
     iou: str = Form("0.7"),
-    max_det: str = Form("10")
+    max_det: str = Form("10"),
+    optimization_strategy: str = Form("original")
 ):
     """分析上传的视频文件，返回YOLOv8检测结果"""
     print(f"收到视频上传请求: {video.filename}, 类型: {video.content_type}, 大小: {video.size}")
@@ -1110,9 +1239,10 @@ async def analyze_video_test(
             "resolution": resolution,
             "confidence": confidence,
             "iou": iou,
-            "max_det": max_det
+            "max_det": max_det,
+            "optimization_strategy": optimization_strategy
         }
-        t = threading.Thread(target=_analyze_video_job, args=(job_id, tmp_path, resolution, confidence, iou, max_det), daemon=True)
+        t = threading.Thread(target=_analyze_video_job, args=(job_id, tmp_path, resolution, confidence, iou, max_det, optimization_strategy), daemon=True)
         t.start()
         
         response = {

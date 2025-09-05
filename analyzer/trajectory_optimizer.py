@@ -1,8 +1,10 @@
 from __future__ import annotations
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict, Any
 import numpy as np
 from scipy import signal
 from scipy.signal import savgol_filter
+from .strategy_manager import get_strategy_manager
+from .custom_strategies import register_custom_strategies
 
 
 class TrajectoryOptimizer:
@@ -10,6 +12,10 @@ class TrajectoryOptimizer:
     
     def __init__(self, confidence_threshold: float = 0.5):
         self.confidence_threshold = confidence_threshold
+        self.strategy_manager = get_strategy_manager()
+        # 注册真实策略
+        from .real_strategies import register_real_strategies
+        register_real_strategies(self.strategy_manager)
         
     def optimize_trajectory(self, 
                           raw_trajectory: List[List[float]], 
@@ -43,6 +49,70 @@ class TrajectoryOptimizer:
         quality_scores = self._calculate_quality_scores(trajectory, raw_trajectory)
         
         return trajectory, quality_scores
+    
+    def optimize_with_strategy(self, 
+                             raw_trajectory: List[List[float]], 
+                             strategy_id: str,
+                             **strategy_params) -> Tuple[List[List[float]], List[float]]:
+        """
+        使用指定策略优化轨迹
+        
+        Args:
+            raw_trajectory: 原始轨迹 [[x, y], ...]
+            strategy_id: 策略ID
+            **strategy_params: 策略参数
+            
+        Returns:
+            (优化后的轨迹, 质量评分列表)
+        """
+        if len(raw_trajectory) < 3:
+            return raw_trajectory, [1.0] * len(raw_trajectory)
+        
+        # 预处理轨迹
+        trajectory = self._preprocess_trajectory(raw_trajectory)
+        
+        # 转换为策略管理器需要的格式
+        trajectory_tuples = []
+        for point in trajectory:
+            if point is not None and len(point) >= 2:
+                try:
+                    # 安全地转换为浮点数
+                    x = float(point[0])
+                    y = float(point[1])
+                    
+                    # 检查是否为有效坐标
+                    if not (x == 0 and y == 0) and not (np.isnan(x) or np.isnan(y)):
+                        trajectory_tuples.append((x, y))
+                    else:
+                        trajectory_tuples.append((None, None))
+                except (ValueError, TypeError):
+                    trajectory_tuples.append((None, None))
+            else:
+                trajectory_tuples.append((None, None))
+        
+        try:
+            # 应用指定策略
+            optimized_tuples = self.strategy_manager.apply_strategy(
+                strategy_id, trajectory_tuples, **strategy_params
+            )
+            
+            # 转换回列表格式
+            optimized_trajectory = [[point[0], point[1]] for point in optimized_tuples]
+            
+            return optimized_trajectory
+            
+        except Exception as e:
+            print(f"应用策略 {strategy_id} 时出错: {e}")
+            # 回退到默认优化
+            return self.optimize_trajectory(raw_trajectory)
+    
+    def get_available_strategies(self) -> Dict[str, Any]:
+        """获取所有可用策略"""
+        return self.strategy_manager.get_all_strategies()
+    
+    def get_strategies_by_category(self, category: str) -> Dict[str, Any]:
+        """按类别获取策略"""
+        return self.strategy_manager.get_strategies_by_category(category)
     
     def _preprocess_trajectory(self, raw_trajectory: List[List[float]]) -> List[List[float]]:
         """预处理轨迹数据"""

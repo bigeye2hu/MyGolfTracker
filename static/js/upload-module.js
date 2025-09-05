@@ -10,6 +10,8 @@ class UploadModule {
         // 延迟绑定事件，确保DOM元素已经创建
         setTimeout(() => {
             this.bindEvents();
+            // 页面加载时就加载策略选项
+            this.loadAvailableStrategies();
         }, 100);
     }
 
@@ -47,6 +49,27 @@ class UploadModule {
                             </label>
                         </div>
                         <p style="margin: 10px 0 0 0; color: #6c757d; font-size: 12px;">括号内为测试检测率，480×480为当前推荐设置</p>
+                    </div>
+                    
+                    <!-- 优化策略选择 -->
+                    <div class="strategy-selector" style="margin: 20px 0; padding: 15px; background: #e8f5e8; border-radius: 10px; border: 1px solid #c3e6c3;">
+                        <h3 style="margin: 0 0 10px 0; color: #2d5a2d; font-size: 16px;">🎯 轨迹优化策略选择</h3>
+                        <p style="margin: 0 0 15px 0; color: #2d5a2d; font-size: 14px;">选择不同的轨迹优化算法来改善检测结果</p>
+                        
+                        <div class="strategy-options" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+                            <label style="display: flex; align-items: center; padding: 10px 12px; background: white; border: 2px solid #28a745; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
+                                <input type="radio" name="optimizationStrategy" value="original" checked style="margin-right: 8px;">
+                                <div>
+                                    <div style="font-weight: 600; color: #2d5a2d;">原始检测</div>
+                                    <small style="color: #6c757d;">不进行轨迹优化，使用原始检测结果</small>
+                                </div>
+                            </label>
+                            <!-- 其他策略选项将通过JavaScript动态添加 -->
+                        </div>
+                        
+                        <div id="strategyDescription" class="strategy-description" style="margin-top: 10px; padding: 8px 12px; background: #f8f9fa; border-radius: 4px; font-size: 12px; color: #6c757d; line-height: 1.4; min-height: 20px;">
+                            选择原始检测，不进行轨迹优化
+                        </div>
                     </div>
                     
                     <!-- 高级参数调节 -->
@@ -117,6 +140,17 @@ class UploadModule {
                     <button class="upload-btn" onclick="document.getElementById('videoFileInput').click()">
                         选择视频文件
                     </button>
+                    
+                    <!-- 开始分析按钮 -->
+                    <div id="startAnalysisSection" style="display: none; margin-top: 20px;">
+                        <button id="startAnalysisBtn" class="upload-btn" style="background: linear-gradient(135deg, #28a745, #20c997); color: white; padding: 12px 30px; font-size: 16px; font-weight: 600; border: none; border-radius: 25px; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);">
+                            🚀 开始分析视频
+                        </button>
+                        <p style="margin-top: 10px; color: #6c757d; font-size: 14px;">
+                            已选择视频文件，请确认参数设置后点击开始分析
+                        </p>
+                    </div>
+                    
                     <div id="uploadStatus" class="status" style="display: none;"></div>
                 </div>
             `;
@@ -180,11 +214,147 @@ class UploadModule {
 
         console.log('文件已选择:', file.name, file.size, file.type);
         this.currentVideoFile = file;
+        
+        // 显示开始分析按钮
+        const startAnalysisSection = document.getElementById('startAnalysisSection');
+        if (startAnalysisSection) {
+            startAnalysisSection.style.display = 'block';
+        }
+        
+        this.showStatus('视频已选择，请确认参数后点击开始分析', 'info');
+    }
+
+    async loadAvailableStrategies() {
+        try {
+            console.log('🔄 开始加载策略...');
+            const response = await fetch('/analyze/strategies');
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            
+            const data = await response.json();
+            this.availableStrategies = data.strategies || {};
+            console.log('✅ 策略加载成功:', this.availableStrategies);
+            
+            // 更新策略选项
+            this.updateStrategyOptions();
+            
+            // 绑定策略选择事件
+            this.bindStrategyEvents();
+            
+        } catch (error) {
+            console.error('❌ 加载策略失败:', error);
+            this.availableStrategies = {};
+        }
+    }
+
+    updateStrategyOptions() {
+        const strategyOptions = document.querySelector('.strategy-options');
+        if (!strategyOptions) {
+            console.error('❌ 找不到策略选项容器');
+            return;
+        }
+        
+        console.log('🔄 更新策略选项...');
+        console.log('可用策略:', this.availableStrategies);
+        
+        // 清空现有选项
+        strategyOptions.innerHTML = '';
+        
+        // 添加原始检测选项
+        const originalLabel = document.createElement('label');
+        originalLabel.style.cssText = 'display: flex; align-items: center; padding: 10px 12px; background: white; border: 2px solid #28a745; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;';
+        originalLabel.innerHTML = `
+            <input type="radio" name="optimizationStrategy" value="original" checked style="margin-right: 8px;">
+            <div>
+                <div style="font-weight: 600; color: #2d5a2d;">原始检测</div>
+                <small style="color: #6c757d;">不进行轨迹优化，使用原始检测结果</small>
+            </div>
+        `;
+        strategyOptions.appendChild(originalLabel);
+        console.log('✅ 添加原始检测选项');
+        
+        // 添加所有策略选项
+        if (this.availableStrategies) {
+            let strategyCount = 0;
+            Object.entries(this.availableStrategies).forEach(([id, strategy]) => {
+                // 跳过原始检测，因为已经单独添加了
+                if (id === 'original') return;
+                
+                const label = document.createElement('label');
+                label.style.cssText = 'display: flex; align-items: center; padding: 10px 12px; background: white; border: 2px solid #e9ecef; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;';
+                
+                // 为智能插值策略添加特殊样式
+                if (id === 'smart_interpolation') {
+                    label.style.borderColor = '#007bff';
+                    label.style.backgroundColor = '#f8f9ff';
+                }
+                
+                label.innerHTML = `
+                    <input type="radio" name="optimizationStrategy" value="${id}" style="margin-right: 8px;">
+                    <div>
+                        <div style="font-weight: 600; color: #2d5a2d;">${strategy.name}</div>
+                        <small style="color: #6c757d;">${strategy.description}</small>
+                    </div>
+                `;
+                
+                strategyOptions.appendChild(label);
+                strategyCount++;
+                console.log(`✅ 添加策略选项: ${id} - ${strategy.name}`);
+            });
+            console.log(`✅ 总共添加了 ${strategyCount} 个策略选项`);
+        } else {
+            console.warn('⚠️ 没有可用策略数据');
+        }
+    }
+
+    bindStrategyEvents() {
+        // 绑定策略选择事件
+        const strategyInputs = document.querySelectorAll('input[name="optimizationStrategy"]');
+        strategyInputs.forEach(input => {
+            input.addEventListener('change', () => {
+                this.updateStrategyDescription();
+            });
+        });
+        
+        // 绑定开始分析按钮事件
+        const startAnalysisBtn = document.getElementById('startAnalysisBtn');
+        if (startAnalysisBtn) {
+            startAnalysisBtn.addEventListener('click', () => {
+                this.startAnalysis();
+            });
+        }
+    }
+
+    updateStrategyDescription() {
+        const selectedStrategy = document.querySelector('input[name="optimizationStrategy"]:checked');
+        const descriptionDiv = document.getElementById('strategyDescription');
+        
+        if (!selectedStrategy || !descriptionDiv) return;
+        
+        if (selectedStrategy.value === 'original') {
+            descriptionDiv.textContent = '选择原始检测，不进行轨迹优化';
+        } else if (this.availableStrategies && this.availableStrategies[selectedStrategy.value]) {
+            const strategy = this.availableStrategies[selectedStrategy.value];
+            descriptionDiv.textContent = `${strategy.name}: ${strategy.description}`;
+        }
+    }
+
+    async startAnalysis() {
+        if (!this.currentVideoFile) {
+            this.showStatus('请先选择视频文件', 'error');
+            return;
+        }
+
         this.showStatus('正在分析视频...', 'processing');
+        
+        // 隐藏开始分析按钮
+        const startAnalysisSection = document.getElementById('startAnalysisSection');
+        if (startAnalysisSection) {
+            startAnalysisSection.style.display = 'none';
+        }
 
         try {
             const formData = new FormData();
-            formData.append('video', file);
+            formData.append('video', this.currentVideoFile);
             
             // 获取选择的分辨率
             const resolutionInput = document.querySelector('input[name="resolution"]:checked');
@@ -200,8 +370,13 @@ class UploadModule {
             formData.append('iou', iou);
             formData.append('max_det', maxDet);
             
+            // 获取选择的优化策略
+            const strategyInput = document.querySelector('input[name="optimizationStrategy"]:checked');
+            const selectedStrategy = strategyInput ? strategyInput.value : 'original';
+            formData.append('optimization_strategy', selectedStrategy);
+            
             console.log('FormData已创建，准备发送请求到 /analyze/video');
-            console.log('参数:', { resolution, confidence, iou, maxDet });
+            console.log('参数:', { resolution, confidence, iou, maxDet, selectedStrategy });
 
             const response = await fetch('/analyze/video', {
                 method: 'POST',
@@ -231,8 +406,13 @@ class UploadModule {
             }
             
         } catch (error) {
-            console.error('上传失败:', error);
+            console.error('分析失败:', error);
             this.showStatus(`分析失败: ${error.message}`, 'error');
+            
+            // 重新显示开始分析按钮
+            if (startAnalysisSection) {
+                startAnalysisSection.style.display = 'block';
+            }
         }
     }
 

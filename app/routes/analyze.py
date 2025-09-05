@@ -20,6 +20,7 @@ from detector.pose_detector import PoseDetector
 from analyzer.ffmpeg import iter_video_frames
 from analyzer.swing_analyzer import SwingAnalyzer
 from analyzer.trajectory_optimizer import TrajectoryOptimizer
+from analyzer.swing_state_machine import SwingStateMachine, SwingPhase
 
 
 router = APIRouter()
@@ -160,6 +161,19 @@ def _analyze_video_job(job_id: str, video_path: str, resolution: str = "480", co
         fast_motion_optimizer = FastMotionOptimizer(confidence_threshold=0.3, velocity_threshold=0.15)
         fast_motion_trajectory, _ = fast_motion_optimizer.optimize_trajectory(norm_trajectory)
         fast_motion_trajectory = clean_trajectory(fast_motion_trajectory)
+        
+        # 挥杆状态分析
+        print("🎯 开始挥杆状态分析...")
+        try:
+            swing_state_machine = SwingStateMachine()
+            swing_phases = swing_state_machine.analyze_swing(norm_trajectory)
+            print(f"✅ 挥杆状态分析完成，共分析 {len(swing_phases)} 帧")
+        except Exception as e:
+            print(f"❌ 挥杆状态分析失败: {e}")
+            import traceback
+            traceback.print_exc()
+            # 使用默认状态
+            swing_phases = [SwingPhase.UNKNOWN] * len(norm_trajectory)
 
         result = {
             "total_frames": total_frames,
@@ -170,6 +184,7 @@ def _analyze_video_job(job_id: str, video_path: str, resolution: str = "480", co
             "optimized_trajectory": optimized_trajectory,  # 标准优化后的轨迹
             "fast_motion_trajectory": fast_motion_trajectory,  # 快速移动优化后的轨迹
             "frame_detections": frame_detections,
+            "swing_phases": [phase.value for phase in swing_phases],  # 挥杆状态序列
             "video_info": {
                 "width": video_width,
                 "height": video_height,
@@ -1034,8 +1049,9 @@ async def get_server_test_page():
     <script src="/static/js/results-module.js?v=1.6"></script>
     <script src="/static/js/trajectory-module.js?v=1.7"></script>
     <script src="/static/js/video-player-module.js?v=2.2"></script>
-    <script src="/static/js/json-output-module.js?v=1.7"></script>
+    <script src="/static/js/json-output-module.js?v=1.8"></script>
     <script src="/static/js/frame-analysis-module.js?v=1.6"></script>
+    <script src="/static/js/swing-visualization-module.js?v=1.0"></script>
     <script src="/static/js/main.js?v=1.6"></script>
 </body>
 </html>

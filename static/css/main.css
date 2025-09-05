@@ -409,3 +409,106 @@ body {
     font-style: italic;
     margin-left: 10px;
 }
+
+/* 挥杆状态可视化样式 */
+.visualization-container {
+    margin-top: 20px;
+}
+
+.trajectory-chart-container {
+    margin-bottom: 30px;
+    text-align: center;
+}
+
+.trajectory-chart-container canvas {
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    background: white;
+}
+
+.state-statistics {
+    margin-bottom: 30px;
+}
+
+.state-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin-top: 15px;
+}
+
+.state-stat-item {
+    display: flex;
+    align-items: center;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.state-color {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    margin-right: 10px;
+}
+
+.state-name {
+    flex: 1;
+    font-weight: 600;
+    color: #495057;
+}
+
+.state-count {
+    margin-right: 10px;
+    color: #6c757d;
+    font-size: 14px;
+}
+
+.state-percentage {
+    color: #007bff;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.frame-details {
+    margin-bottom: 20px;
+}
+
+.frame-details-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 10px;
+    margin-top: 15px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.frame-detail-item {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    border: 1px solid #e9ecef;
+    font-size: 14px;
+}
+
+.frame-number {
+    font-weight: 600;
+    color: #495057;
+    margin-right: 10px;
+    min-width: 40px;
+}
+
+.frame-state {
+    font-weight: 600;
+    margin-right: 10px;
+    min-width: 80px;
+}
+
+.frame-coords {
+    color: #6c757d;
+    font-family: monospace;
+    font-size: 12px;
+}

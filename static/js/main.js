@@ -30,7 +30,8 @@ class MainController {
             'trajectoryModule',
             'videoPlayerModule',
             'jsonOutputModule',
-            'frameAnalysisModule'
+            'frameAnalysisModule',
+            'swingVisualizationModule'
         ];
         
         console.log('检查模块加载状态...');

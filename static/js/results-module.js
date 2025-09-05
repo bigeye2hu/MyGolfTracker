@@ -34,6 +34,9 @@ class ResultsModule {
         // 创建失败帧下载区域
         this.displayFailureFramesDownload(data);
 
+        // 触发挥杆状态可视化
+        this.triggerSwingVisualization(data);
+
         // 触发模块更新事件
         this.triggerModulesUpdate();
     }
@@ -173,6 +176,16 @@ class ResultsModule {
                     if (tries >= maxTries) clearInterval(intervalId);
                 }, 2000);
             }
+        }
+    }
+
+    triggerSwingVisualization(data) {
+        // 触发挥杆状态可视化
+        if (window.swingVisualizationModule) {
+            console.log('触发挥杆状态可视化...');
+            window.swingVisualizationModule.renderSwingVisualization(data);
+        } else {
+            console.warn('挥杆状态可视化模块未加载');
         }
     }
 

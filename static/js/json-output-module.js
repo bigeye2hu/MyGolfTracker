@@ -70,6 +70,9 @@ class JsonOutputModule {
     displayJsonOutput(data) {
         this.currentAnalysisData = data;
         console.log('JSON输出模块收到数据:', data);
+        console.log('swing_phases数据:', data.swing_phases);
+        console.log('swing_phases类型:', typeof data.swing_phases);
+        console.log('swing_phases长度:', data.swing_phases ? data.swing_phases.length : 'null/undefined');
         
         // 等待JSON区域创建完成
         setTimeout(() => {
@@ -86,9 +89,11 @@ class JsonOutputModule {
             jsonContent: jsonContent
         });
         
+        
         if (jsonPreview && jsonContent) {
             const golftrainerJson = this.generateGolftrainerJson(data);
             console.log('生成的Golftrainer JSON:', golftrainerJson);
+            console.log('pose_result.poses:', golftrainerJson.pose_result.poses);
             
             jsonContent.textContent = JSON.stringify(golftrainerJson, null, 2);
             
@@ -198,6 +203,9 @@ class JsonOutputModule {
     }
 
     generateGolftrainerJson(data) {
+        const poses = data.swing_phases || [];
+        const posesCount = poses.length;
+        
         return {
             version: 1.0,
             video_spec: {
@@ -214,9 +222,9 @@ class JsonOutputModule {
             },
             num_frames: data.total_frames || 0,
             pose_result: {
-                poses: [],
+                poses: poses,
                 handed: "RightHanded",
-                poses_count: 1
+                poses_count: posesCount
             },
             club_head_result: {
                 norm_points: data.club_head_trajectory || [],

@@ -269,6 +269,9 @@ class UploadModule {
 
     onAnalysisComplete(data) {
         console.log('分析完成，触发事件:', data);
+        console.log('swing_phases数据:', data.swing_phases);
+        console.log('swing_phases类型:', typeof data.swing_phases);
+        console.log('swing_phases长度:', data.swing_phases ? data.swing_phases.length : 'null/undefined');
         
         // 触发自定义事件，通知其他模块
         const event = new CustomEvent('analysisComplete', {

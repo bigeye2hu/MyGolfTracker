@@ -34,7 +34,7 @@ class YOLOv8Detector:
                 pass
             YOLOv8Detector._model = model
 
-    def detect_single_point(self, image_bgr: np.ndarray, debug: bool = False) -> Optional[Tuple[float, float, float]]:
+    def detect_single_point(self, image_bgr: np.ndarray, debug: bool = False, imgsz: int = 480, conf: float = 0.01, iou: float = 0.7, max_det: int = 10) -> Optional[Tuple[float, float, float]]:
         """
         Run detection on one frame and return the highest-confidence club head bbox center.
         
@@ -68,13 +68,17 @@ class YOLOv8Detector:
             os.environ.setdefault(k, "4")  # 增加BLAS线程数
 
         # 控制推理分辨率并固定在 CPU 上推理，减少 CPU 机器上的负载
-        # 对于快速移动场景，使用更高的推理分辨率来提高检测精度
+        # 使用动态分辨率以平衡检测精度和处理速度
         results = YOLOv8Detector._model.predict(
             source=image_bgr,
             verbose=False,
             device="cpu",
-            imgsz=640,  # 提高分辨率以更好地检测快速移动的物体
-            conf=0.05,  # 进一步降低置信度阈值以提高检测率
+            imgsz=imgsz,  # 使用传入的分辨率参数
+            conf=conf,  # 使用传入的置信度阈值
+            iou=iou,  # 使用传入的IoU阈值
+            max_det=max_det,  # 使用传入的最大检测数量
+            agnostic_nms=False,  # 使用类别感知的NMS
+            augment=False,  # 关闭测试时增强以提高速度
         )
         if not results:
             return None
@@ -132,16 +136,37 @@ class YOLOv8Detector:
             
             return None
         
-        # 4. 在杆头检测结果中选择置信度最高的（即使置信度很低也优先使用杆头）
-        best_idx = int(np.argmax(club_head_boxes[:, 4]))
+        # 4. 在杆头检测结果中选择最佳检测框
+        # 优先选择置信度最高的，如果置信度相近则选择面积较大的
+        best_idx = 0
+        best_score = 0
+        
+        for i, box in enumerate(club_head_boxes):
+            x1, y1, x2, y2, conf, cls = box
+            area = (x2 - x1) * (y2 - y1)
+            
+            # 计算综合得分：置信度 + 面积权重
+            # 面积太小可能是误检，给予惩罚
+            area_penalty = 1.0 if area > 100 else 0.8  # 面积小于100像素时降低权重
+            score = conf * area_penalty
+            
+            if score > best_score:
+                best_score = score
+                best_idx = i
+        
         x1, y1, x2, y2, conf, cls = club_head_boxes[best_idx]
         cls_id = int(cls)
         cls_name = names.get(cls_id, f"unknown_{cls_id}")
         cx = (x1 + x2) / 2.0
         cy = (y1 + y2) / 2.0
         
+        # 如果检测框太小，降低置信度
+        area = (x2 - x1) * (y2 - y1)
+        if area < 100:
+            conf *= 0.8
+        
         if debug:
-            print(f"✅ 优先选择杆头: {cls_name} (ID:{cls_id}) - 置信度: {conf:.3f}")
+            print(f"✅ 选择最佳杆头: {cls_name} (ID:{cls_id}) - 置信度: {conf:.3f} - 面积: {area:.1f}")
             
             # 检查是否有其他高置信度的检测（仅用于信息显示）
             other_boxes = boxes[boxes[:, 5] != 1]  # 非杆头检测

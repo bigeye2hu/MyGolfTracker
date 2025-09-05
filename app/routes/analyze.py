@@ -40,7 +40,7 @@ _SERVER_STATUS = {
     "server_load": "normal"
 }
 
-def _analyze_video_job(job_id: str, video_path: str) -> None:
+def _analyze_video_job(job_id: str, video_path: str, resolution: str = "480", confidence: str = "0.01", iou: str = "0.7", max_det: str = "10") -> None:
     try:
         _JOB_STORE[job_id]["status"] = "running"
         detector = YOLOv8Detector()
@@ -75,11 +75,17 @@ def _analyze_video_job(job_id: str, video_path: str) -> None:
                     cleaned.append([0.0, 0.0])
             return cleaned
         
-        # 处理每一帧，提高检测精度
-        for ok, frame_bgr in iter_video_frames(video_path, sample_stride=1, max_size=960):
+        # 处理每一帧，使用用户选择的参数
+        resolution_int = int(resolution) if resolution.isdigit() else 480
+        confidence_float = float(confidence) if confidence else 0.01
+        iou_float = float(iou) if iou else 0.7
+        max_det_int = int(max_det) if max_det.isdigit() else 10
+        
+        print(f"使用分析参数: 分辨率={resolution_int}×{resolution_int}, 置信度={confidence_float}, IoU={iou_float}, 最大检测={max_det_int}")
+        for ok, frame_bgr in iter_video_frames(video_path, sample_stride=1, max_size=resolution_int):
             if not ok:
                 break
-            res = detector.detect_single_point(frame_bgr)
+            res = detector.detect_single_point(frame_bgr, imgsz=resolution_int, conf=confidence_float, iou=iou_float, max_det=max_det_int)
             if res is not None:
                 cx, cy, conf = res
                 # 获取当前帧的实际尺寸（可能被缩放）
@@ -1038,7 +1044,13 @@ async def get_server_test_page():
 
 
 @router.post("/video")
-async def analyze_video_test(video: UploadFile = File(...)):
+async def analyze_video_test(
+    video: UploadFile = File(...), 
+    resolution: str = Form("480"),
+    confidence: str = Form("0.01"),
+    iou: str = Form("0.7"),
+    max_det: str = Form("10")
+):
     """分析上传的视频文件，返回YOLOv8检测结果"""
     print(f"收到视频上传请求: {video.filename}, 类型: {video.content_type}, 大小: {video.size}")
     
@@ -1078,9 +1090,13 @@ async def analyze_video_test(video: UploadFile = File(...)):
             "status": "queued", 
             "progress": 0, 
             "filename": video.filename,
-            "compatibility": compatibility_info
+            "compatibility": compatibility_info,
+            "resolution": resolution,
+            "confidence": confidence,
+            "iou": iou,
+            "max_det": max_det
         }
-        t = threading.Thread(target=_analyze_video_job, args=(job_id, tmp_path), daemon=True)
+        t = threading.Thread(target=_analyze_video_job, args=(job_id, tmp_path, resolution, confidence, iou, max_det), daemon=True)
         t.start()
         
         response = {

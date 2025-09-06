@@ -400,3 +400,7 @@ class DualPlayerModule {
 
 // 初始化双画面播放器模块
 const dualPlayerModule = new DualPlayerModule();
+
+// 注册到全局作用域
+window.dualPlayerModule = dualPlayerModule;
+console.log('✅ dualPlayerModule 已创建并加载到全局作用域');

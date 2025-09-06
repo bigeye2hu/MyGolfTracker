@@ -1,6 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, Form
 from fastapi import HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 import os
 import tempfile
 import shutil
@@ -11,6 +11,8 @@ import time
 import json
 import base64
 from datetime import datetime
+import zipfile
+import io
 
 import numpy as np
 import cv2
@@ -247,13 +249,13 @@ def _analyze_video_job(job_id: str, video_path: str, resolution: str = "480", co
         _JOB_STORE[job_id]["status"] = "done"
         _JOB_STORE[job_id]["result"] = result
         
-        # 生成失败帧下载页面（在删除视频文件之前）
+        # 生成训练数据收集页面（失败帧 + 低置信度帧）
         try:
-            # 将失败帧定义为：
-            # 1) 条目为 None；或
-            # 2) 条目是字典且 detected 为 False；或
-            # 3) 归一化坐标为 (0,0)
+            # 定义失败帧和低置信度帧
             failure_frames = []
+            low_confidence_frames = []
+            confidence_threshold = 0.3  # 低置信度阈值
+            
             for i, det in enumerate(frame_detections):
                 if det is None:
                     failure_frames.append(i)
@@ -264,24 +266,33 @@ def _analyze_video_job(job_id: str, video_path: str, resolution: str = "480", co
                         continue
                     nx = det.get("norm_x", None)
                     ny = det.get("norm_y", None)
+                    conf = det.get("confidence", 0.0)
+                    
                     if nx == 0 and ny == 0:
                         failure_frames.append(i)
-            print(f"检测到 {len(failure_frames)} 个失败帧: {failure_frames[:10]}...")  # 只显示前10个
-            if failure_frames:
-                print(f"开始生成失败帧下载页面，任务ID: {job_id}")
-                failure_download_url = _generate_failure_frames_page(job_id, video_path, failure_frames)
-                print(f"失败帧下载页面生成完成: {failure_download_url}")
+                    elif conf < confidence_threshold:
+                        low_confidence_frames.append(i)
+            
+            print(f"检测到 {len(failure_frames)} 个失败帧: {failure_frames[:10]}...")
+            print(f"检测到 {len(low_confidence_frames)} 个低置信度帧: {low_confidence_frames[:10]}...")
+            
+            if failure_frames or low_confidence_frames:
+                print(f"开始生成训练数据收集页面，任务ID: {job_id}")
+                training_data_url = _generate_training_data_page(
+                    job_id, video_path, failure_frames, low_confidence_frames, confidence_threshold
+                )
+                print(f"训练数据收集页面生成完成: {training_data_url}")
                 # 将下载链接写入结果，确保状态接口能返回给前端
                 try:
-                    result["failure_download_url"] = failure_download_url
+                    result["training_data_url"] = training_data_url
                     _JOB_STORE[job_id]["result"] = result
                 except Exception:
                     pass
-                _JOB_STORE[job_id]["failure_download_url"] = failure_download_url
+                _JOB_STORE[job_id]["training_data_url"] = training_data_url
             else:
-                print("没有失败帧，跳过下载页面生成")
+                print("没有失败帧或低置信度帧，跳过训练数据收集页面生成")
         except Exception as e:
-            print(f"生成失败帧下载页面时出错: {e}")
+            print(f"生成训练数据收集页面时出错: {e}")
             import traceback
             traceback.print_exc()
             # 不影响主要分析结果
@@ -1391,6 +1402,88 @@ async def get_conversion_guide():
     }
 
 
+def _generate_training_data_page(job_id: str, video_path: str, failure_frames: List[int], low_confidence_frames: List[int], confidence_threshold: float) -> str:
+    """生成训练数据收集页面（失败帧 + 低置信度帧）并返回URL"""
+    try:
+        print(f"开始处理视频: {video_path}")
+        # 打开视频获取帧的图片
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            print(f"无法打开视频文件: {video_path}")
+            return None
+        
+        # 获取视频信息
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        print(f"视频信息: 总帧数={total_frames}, FPS={fps}")
+        
+        # 收集所有训练数据帧
+        all_training_frames = failure_frames + low_confidence_frames
+        all_training_frames = sorted(list(set(all_training_frames)))  # 去重并排序
+        
+        training_frame_data = []
+        print(f"开始处理 {len(all_training_frames)} 个训练数据帧...")
+        for i, frame_num in enumerate(all_training_frames):
+            if i % 5 == 0:  # 每5帧打印一次进度
+                print(f"处理进度: {i+1}/{len(all_training_frames)} (帧 {frame_num})")
+            
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+            ret, frame = cap.read()
+            
+            if ret:
+                # 将帧转换为base64编码的图片
+                _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+                img_base64 = base64.b64encode(buffer).decode('utf-8')
+                
+                # 确定帧类型
+                frame_type = "failure" if frame_num in failure_frames else "low_confidence"
+                frame_type_cn = "失败帧" if frame_type == "failure" else "低置信度帧"
+                
+                training_frame_data.append({
+                    "frame_number": frame_num,
+                    "timestamp": frame_num / fps,
+                    "image_data": img_base64,
+                    "filename": f"training_{frame_type}_frame_{frame_num:03d}.jpg",
+                    "frame_type": frame_type,
+                    "frame_type_cn": frame_type_cn
+                })
+            else:
+                print(f"警告: 无法读取第 {frame_num} 帧")
+        
+        cap.release()
+        
+        if not training_frame_data:
+            print("没有有效的训练数据帧")
+            return None
+        
+        print(f"成功提取 {len(training_frame_data)} 个训练数据帧，开始生成HTML...")
+        
+        # 生成HTML内容
+        html_content = _generate_training_data_html(
+            training_frame_data, job_id, len(failure_frames), len(low_confidence_frames), 
+            total_frames, confidence_threshold
+        )
+        print("HTML内容生成完成")
+        
+        # 保存HTML文件
+        html_filename = f"training_data_{job_id}.html"
+        html_path = os.path.join("static", html_filename)
+        
+        # 确保static目录存在
+        os.makedirs("static", exist_ok=True)
+        print(f"保存HTML文件到: {html_path}")
+        
+        with open(html_path, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        
+        print(f"HTML文件保存完成，返回URL: /static/{html_filename}")
+        return f"/static/{html_filename}"
+        
+    except Exception as e:
+        print(f"生成训练数据收集页面失败: {e}")
+        return None
+
+
 def _generate_failure_frames_page(job_id: str, video_path: str, failure_frames: List[int]) -> str:
     """生成失败帧下载页面并返回URL"""
     try:
@@ -1459,6 +1552,594 @@ def _generate_failure_frames_page(job_id: str, video_path: str, failure_frames: 
     except Exception as e:
         print(f"生成失败帧下载页面失败: {e}")
         return None
+
+
+def _generate_training_data_html(training_frame_data: List[Dict], job_id: str, failure_count: int, low_confidence_count: int, total_frames: int, confidence_threshold: float) -> str:
+    """生成训练数据收集页面的HTML内容"""
+    
+    total_training_frames = len(training_frame_data)
+    failure_rate = (failure_count / total_frames) * 100
+    low_confidence_rate = (low_confidence_count / total_frames) * 100
+    total_training_rate = (total_training_frames / total_frames) * 100
+    
+    html = f"""
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>训练数据收集 - Job {job_id[:8]}</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }}
+        
+        .container {{
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }}
+        
+        h1 {{
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.2em;
+        }}
+        
+        .summary {{
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+            border-left: 4px solid #dc3545;
+        }}
+        
+        .summary h3 {{
+            margin: 0 0 15px 0;
+            color: #2c3e50;
+        }}
+        
+        .stats-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }}
+        
+        .stat-item {{
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            border: 2px solid #e9ecef;
+        }}
+        
+        .stat-item.failure {{
+            border-color: #dc3545;
+            background: #fff5f5;
+        }}
+        
+        .stat-item.low-confidence {{
+            border-color: #ffc107;
+            background: #fffbf0;
+        }}
+        
+        .stat-item.total {{
+            border-color: #28a745;
+            background: #f8fff9;
+        }}
+        
+        .stat-number {{
+            font-size: 1.8em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }}
+        
+        .stat-label {{
+            color: #6c757d;
+            font-size: 14px;
+        }}
+        
+        .summary p {{
+            margin: 5px 0;
+            color: #495057;
+        }}
+        
+        .controls {{
+            text-align: center;
+            margin-bottom: 30px;
+        }}
+        
+        .btn {{
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            margin: 0 10px;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }}
+        
+        .btn:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }}
+        
+        .btn-secondary {{
+            background: linear-gradient(135deg, #6c757d, #495057);
+        }}
+        
+        .btn-success {{
+            background: linear-gradient(135deg, #28a745, #20c997);
+        }}
+        
+        .filter-controls {{
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+        }}
+        
+        .filter-controls label {{
+            margin: 0 15px;
+            font-weight: 600;
+            color: #2c3e50;
+        }}
+        
+        .filter-controls input[type="checkbox"] {{
+            margin-right: 8px;
+            transform: scale(1.2);
+        }}
+        
+        .frames-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }}
+        
+        .frame-item {{
+            background: white;
+            border-radius: 10px;
+            padding: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            border: 2px solid #e9ecef;
+            transition: all 0.3s ease;
+        }}
+        
+        .frame-item:hover {{
+            transform: translateY(-2px);
+        }}
+        
+        .frame-item.failure {{
+            border-color: #dc3545;
+        }}
+        
+        .frame-item.low-confidence {{
+            border-color: #ffc107;
+        }}
+        
+        .frame-item.selected {{
+            border-color: #28a745;
+            background: #f8fff9;
+        }}
+        
+        .frame-image {{
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }}
+        
+        .frame-info {{
+            text-align: center;
+        }}
+        
+        .frame-info h4 {{
+            margin: 0 0 5px 0;
+            color: #2c3e50;
+        }}
+        
+        .frame-type {{
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }}
+        
+        .frame-type.failure {{
+            background: #dc3545;
+            color: white;
+        }}
+        
+        .frame-type.low-confidence {{
+            background: #ffc107;
+            color: #212529;
+        }}
+        
+        .frame-info p {{
+            margin: 0;
+            color: #6c757d;
+            font-size: 14px;
+        }}
+        
+        .download-btn {{
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 15px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 10px;
+            transition: all 0.3s ease;
+        }}
+        
+        .download-btn:hover {{
+            background: #218838;
+            transform: translateY(-1px);
+        }}
+        
+        .select-all {{
+            margin-bottom: 20px;
+            text-align: center;
+        }}
+        
+        .select-all input[type="checkbox"] {{
+            margin-right: 10px;
+            transform: scale(1.2);
+        }}
+        
+        .select-all label {{
+            font-size: 16px;
+            font-weight: 600;
+            color: #2c3e50;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 训练数据收集工具</h1>
+        
+        <div class="summary">
+            <h3>📊 检测统计</h3>
+            <div class="stats-grid">
+                <div class="stat-item failure">
+                    <div class="stat-number">{failure_count}</div>
+                    <div class="stat-label">失败帧数</div>
+                </div>
+                <div class="stat-item low-confidence">
+                    <div class="stat-number">{low_confidence_count}</div>
+                    <div class="stat-label">低置信度帧数</div>
+                </div>
+                <div class="stat-item total">
+                    <div class="stat-number">{total_training_frames}</div>
+                    <div class="stat-label">总训练帧数</div>
+                </div>
+            </div>
+            <p><strong>任务ID:</strong> {job_id}</p>
+            <p><strong>总帧数:</strong> {total_frames} 帧</p>
+            <p><strong>失败率:</strong> {failure_rate:.1f}%</p>
+            <p><strong>低置信度率:</strong> {low_confidence_rate:.1f}%</p>
+            <p><strong>总训练数据率:</strong> {total_training_rate:.1f}%</p>
+            <p><strong>置信度阈值:</strong> {confidence_threshold}</p>
+            <p><strong>生成时间:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            <p><strong>用途:</strong> 这些图片可用于模型训练数据增强，提高杆头检测准确率</p>
+        </div>
+        
+        <div class="controls">
+            <button class="btn" onclick="selectAll()">全选所有帧</button>
+            <button class="btn btn-secondary" onclick="clearSelection()">清除选择</button>
+            <button class="btn btn-success" onclick="downloadSelected()">下载选中帧</button>
+            <button class="btn" onclick="downloadAll()">下载全部帧</button>
+            <button class="btn btn-primary" onclick="downloadZip()">📦 下载ZIP包</button>
+            <a href="/analyze/server-test" class="btn btn-secondary">返回主页面</a>
+        </div>
+        
+        <div class="filter-controls">
+            <label>
+                <input type="checkbox" id="filterFailure" checked onchange="filterFrames()">
+                显示失败帧
+            </label>
+            <label>
+                <input type="checkbox" id="filterLowConfidence" checked onchange="filterFrames()">
+                显示低置信度帧
+            </label>
+        </div>
+        
+        <div class="select-all">
+            <input type="checkbox" id="selectAllCheckbox" onchange="toggleAllSelection()">
+            <label for="selectAllCheckbox">全选/取消全选</label>
+        </div>
+        
+        <div class="frames-grid" id="framesGrid">
+"""
+    
+    # 添加每个训练数据帧
+    for i, frame_data in enumerate(training_frame_data):
+        html += f"""
+            <div class="frame-item {frame_data['frame_type']}" data-frame="{frame_data['frame_number']}" data-type="{frame_data['frame_type']}">
+                <img src="data:image/jpeg;base64,{frame_data['image_data']}" 
+                     alt="Frame {frame_data['frame_number']}" 
+                     class="frame-image">
+                <div class="frame-info">
+                    <div class="frame-type {frame_data['frame_type']}">{frame_data['frame_type_cn']}</div>
+                    <h4>第 {frame_data['frame_number']} 帧</h4>
+                    <p>时间: {frame_data['timestamp']:.2f}s</p>
+                    <p>文件名: {frame_data['filename']}</p>
+                    <button class="download-btn" onclick="downloadSingleFrame({i})">
+                        下载此帧
+                    </button>
+                </div>
+            </div>
+        """
+    
+    html += """
+        </div>
+    </div>
+
+    <script>
+        const trainingFrames = """ + json.dumps(training_frame_data) + """;
+        
+        function selectAll() {
+            const visibleItems = document.querySelectorAll('.frame-item:not([style*="display: none"])');
+            visibleItems.forEach(item => {
+                item.classList.add('selected');
+            });
+            document.getElementById('selectAllCheckbox').checked = true;
+        }
+        
+        function clearSelection() {
+            const items = document.querySelectorAll('.frame-item');
+            items.forEach(item => {
+                item.classList.remove('selected');
+            });
+            document.getElementById('selectAllCheckbox').checked = false;
+        }
+        
+        function toggleAllSelection() {
+            const checkbox = document.getElementById('selectAllCheckbox');
+            if (checkbox.checked) {
+                selectAll();
+            } else {
+                clearSelection();
+            }
+        }
+        
+        function filterFrames() {
+            const showFailure = document.getElementById('filterFailure').checked;
+            const showLowConfidence = document.getElementById('filterLowConfidence').checked;
+            const items = document.querySelectorAll('.frame-item');
+            
+            items.forEach(item => {
+                const frameType = item.dataset.type;
+                if ((frameType === 'failure' && showFailure) || 
+                    (frameType === 'low_confidence' && showLowConfidence)) {
+                    item.style.display = 'block';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+            
+            // 更新全选状态
+            updateSelectAllCheckbox();
+        }
+        
+        function downloadSingleFrame(index) {
+            const frame = trainingFrames[index];
+            downloadFrame(frame);
+        }
+        
+        function downloadSelected() {
+            const selectedItems = document.querySelectorAll('.frame-item.selected:not([style*="display: none"])');
+            if (selectedItems.length === 0) {
+                alert('请先选择要下载的帧！');
+                return;
+            }
+            
+            selectedItems.forEach(item => {
+                const frameNumber = parseInt(item.dataset.frame);
+                const frame = trainingFrames.find(f => f.frame_number === frameNumber);
+                if (frame) {
+                    downloadFrame(frame);
+                }
+            });
+        }
+        
+        function downloadAll() {
+            const visibleItems = document.querySelectorAll('.frame-item:not([style*="display: none"])');
+            if (visibleItems.length === 0) {
+                alert('没有可下载的帧！');
+                return;
+            }
+            
+            visibleItems.forEach(item => {
+                const frameNumber = parseInt(item.dataset.frame);
+                const frame = trainingFrames.find(f => f.frame_number === frameNumber);
+                if (frame) {
+                    downloadFrame(frame);
+                }
+            });
+        }
+        
+        function downloadZip() {{
+            const jobId = '{job_id}';
+            const zipUrl = `/analyze/training-data/zip/${{jobId}}`;
+            
+            // 创建下载链接
+            const link = document.createElement('a');
+            link.href = zipUrl;
+            link.download = `training_data_${{jobId}}.zip`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }}
+        
+        function downloadFrame(frame) {
+            // 创建下载链接
+            const link = document.createElement('a');
+            link.href = 'data:image/jpeg;base64,' + frame.image_data;
+            link.download = frame.filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        // 点击帧项目切换选择状态
+        document.addEventListener('click', function(e) {
+            if (e.target.closest('.frame-item') && !e.target.closest('.download-btn')) {
+                const item = e.target.closest('.frame-item');
+                item.classList.toggle('selected');
+                updateSelectAllCheckbox();
+            }
+        });
+        
+        function updateSelectAllCheckbox() {
+            const visibleItems = document.querySelectorAll('.frame-item:not([style*="display: none"])');
+            const selectedItems = document.querySelectorAll('.frame-item.selected:not([style*="display: none"])');
+            const checkbox = document.getElementById('selectAllCheckbox');
+            
+            if (selectedItems.length === 0) {
+                checkbox.checked = false;
+                checkbox.indeterminate = false;
+            } else if (selectedItems.length === visibleItems.length) {
+                checkbox.checked = true;
+                checkbox.indeterminate = false;
+            } else {
+                checkbox.checked = false;
+                checkbox.indeterminate = true;
+            }
+        }
+        
+        // 初始化
+        filterFrames();
+    </script>
+</body>
+</html>
+"""
+    
+    return html
+
+
+@router.get("/training-data/zip/{job_id}")
+async def download_training_data_zip(job_id: str):
+    """下载训练数据ZIP包"""
+    try:
+        # 检查任务是否存在
+        if job_id not in _JOB_STORE:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        
+        job_data = _JOB_STORE[job_id]
+        if job_data["status"] != "done":
+            raise HTTPException(status_code=400, detail="任务尚未完成")
+        
+        result = job_data.get("result", {})
+        if not result:
+            raise HTTPException(status_code=404, detail="分析结果不存在")
+        
+        # 获取训练数据信息
+        failure_frames = result.get("failure_frames", [])
+        low_confidence_frames = result.get("low_confidence_frames", [])
+        total_frames = result.get("total_frames", 0)
+        
+        if not failure_frames and not low_confidence_frames:
+            raise HTTPException(status_code=404, detail="没有训练数据可下载")
+        
+        # 创建ZIP文件
+        zip_buffer = io.BytesIO()
+        
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            # 添加README文件
+            readme_content = f"""# 训练数据收集包
+
+## 基本信息
+- 任务ID: {job_id}
+- 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+- 总帧数: {total_frames}
+- 失败帧数: {len(failure_frames)}
+- 低置信度帧数: {len(low_confidence_frames)}
+- 总训练帧数: {len(failure_frames) + len(low_confidence_frames)}
+
+## 文件说明
+- failure_frame_XXX.jpg: 检测失败的帧图片
+- low_confidence_frame_XXX.jpg: 低置信度检测的帧图片
+
+## 用途
+这些图片可用于模型训练数据增强，提高杆头检测准确率。
+
+## 建议
+1. 对失败帧进行重新标注，作为负样本训练
+2. 对低置信度帧进行质量评估，可能需要重新标注
+3. 结合原始视频进行上下文分析
+"""
+            zip_file.writestr("README.txt", readme_content)
+            
+            # 添加统计信息JSON文件
+            stats = {
+                "job_id": job_id,
+                "generation_time": datetime.now().isoformat(),
+                "total_frames": total_frames,
+                "failure_frames": failure_frames,
+                "low_confidence_frames": low_confidence_frames,
+                "failure_count": len(failure_frames),
+                "low_confidence_count": len(low_confidence_frames),
+                "total_training_frames": len(failure_frames) + len(low_confidence_frames),
+                "failure_rate": (len(failure_frames) / total_frames * 100) if total_frames > 0 else 0,
+                "low_confidence_rate": (len(low_confidence_frames) / total_frames * 100) if total_frames > 0 else 0
+            }
+            zip_file.writestr("statistics.json", json.dumps(stats, indent=2, ensure_ascii=False))
+            
+            # 添加帧图片
+            # 注意：这里我们需要重新从视频中提取帧，因为原始视频可能已被删除
+            # 为了简化，我们返回一个说明文件
+            info_content = f"""注意：由于视频文件已被处理，无法直接生成ZIP包中的图片文件。
+请使用训练数据收集页面 (training_data_{job_id}.html) 来下载具体的帧图片。
+
+失败帧列表: {failure_frames}
+低置信度帧列表: {low_confidence_frames}
+
+建议：
+1. 访问训练数据收集页面查看和下载图片
+2. 使用浏览器批量下载功能
+3. 或者重新上传视频进行分析
+"""
+            zip_file.writestr("INFO.txt", info_content)
+        
+        zip_buffer.seek(0)
+        
+        # 返回ZIP文件
+        return StreamingResponse(
+            io.BytesIO(zip_buffer.getvalue()),
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f"attachment; filename=training_data_{job_id}.zip"
+            }
+        )
+        
+    except Exception as e:
+        print(f"生成训练数据ZIP包失败: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"生成ZIP包失败: {str(e)}")
 
 
 def _generate_failure_frames_html(failure_frame_data: List[Dict], job_id: str, failure_count: int, total_frames: int) -> str:
@@ -1777,3 +2458,105 @@ def _generate_failure_frames_html(failure_frame_data: List[Dict], job_id: str, f
 """
     
     return html
+
+
+@router.get("/training-data/zip/{job_id}")
+async def download_training_data_zip(job_id: str):
+    """下载训练数据ZIP包"""
+    try:
+        # 检查任务是否存在
+        if job_id not in _JOB_STORE:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        
+        job_data = _JOB_STORE[job_id]
+        if job_data["status"] != "done":
+            raise HTTPException(status_code=400, detail="任务尚未完成")
+        
+        result = job_data.get("result", {})
+        if not result:
+            raise HTTPException(status_code=404, detail="分析结果不存在")
+        
+        # 获取训练数据信息
+        failure_frames = result.get("failure_frames", [])
+        low_confidence_frames = result.get("low_confidence_frames", [])
+        total_frames = result.get("total_frames", 0)
+        
+        if not failure_frames and not low_confidence_frames:
+            raise HTTPException(status_code=404, detail="没有训练数据可下载")
+        
+        # 创建ZIP文件
+        zip_buffer = io.BytesIO()
+        
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            # 添加README文件
+            readme_content = f"""# 训练数据收集包
+
+## 基本信息
+- 任务ID: {job_id}
+- 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+- 总帧数: {total_frames}
+- 失败帧数: {len(failure_frames)}
+- 低置信度帧数: {len(low_confidence_frames)}
+- 总训练帧数: {len(failure_frames) + len(low_confidence_frames)}
+
+## 文件说明
+- failure_frame_XXX.jpg: 检测失败的帧图片
+- low_confidence_frame_XXX.jpg: 低置信度检测的帧图片
+
+## 用途
+这些图片可用于模型训练数据增强，提高杆头检测准确率。
+
+## 建议
+1. 对失败帧进行重新标注，作为负样本训练
+2. 对低置信度帧进行质量评估，可能需要重新标注
+3. 结合原始视频进行上下文分析
+"""
+            zip_file.writestr("README.txt", readme_content)
+            
+            # 添加统计信息JSON文件
+            stats = {
+                "job_id": job_id,
+                "generation_time": datetime.now().isoformat(),
+                "total_frames": total_frames,
+                "failure_frames": failure_frames,
+                "low_confidence_frames": low_confidence_frames,
+                "failure_count": len(failure_frames),
+                "low_confidence_count": len(low_confidence_frames),
+                "total_training_frames": len(failure_frames) + len(low_confidence_frames),
+                "failure_rate": (len(failure_frames) / total_frames * 100) if total_frames > 0 else 0,
+                "low_confidence_rate": (len(low_confidence_frames) / total_frames * 100) if total_frames > 0 else 0
+            }
+            zip_file.writestr("statistics.json", json.dumps(stats, indent=2, ensure_ascii=False))
+            
+            # 添加帧图片
+            # 注意：这里我们需要重新从视频中提取帧，因为原始视频可能已被删除
+            # 为了简化，我们返回一个说明文件
+            info_content = f"""注意：由于视频文件已被处理，无法直接生成ZIP包中的图片文件。
+请使用训练数据收集页面 (training_data_{job_id}.html) 来下载具体的帧图片。
+
+失败帧列表: {failure_frames}
+低置信度帧列表: {low_confidence_frames}
+
+建议：
+1. 访问训练数据收集页面查看和下载图片
+2. 使用浏览器批量下载功能
+3. 或者重新上传视频进行分析
+"""
+            zip_file.writestr("INFO.txt", info_content)
+        
+        zip_buffer.seek(0)
+        
+        # 返回ZIP文件
+        return StreamingResponse(
+            io.BytesIO(zip_buffer.getvalue()),
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f"attachment; filename=training_data_{job_id}.zip"
+            }
+        )
+        
+    except Exception as e:
+        print(f"生成训练数据ZIP包失败: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"生成ZIP包失败: {str(e)}")

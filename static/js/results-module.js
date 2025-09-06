@@ -18,6 +18,8 @@ class ResultsModule {
     }
 
     displayResults(data) {
+        console.log('ResultsModule 收到数据:', data);
+        console.log('job_id:', data.job_id);
         this.currentAnalysisData = data;
         const resultsSection = document.getElementById('resultsSection');
         if (!resultsSection) return;
@@ -31,8 +33,8 @@ class ResultsModule {
         // 创建杆头信息区域
         this.displayClubHeadInfo(data);
         
-        // 创建失败帧下载区域
-        this.displayFailureFramesDownload(data);
+        // 创建训练数据收集区域
+        this.displayTrainingDataCollection(data);
 
         // 触发挥杆状态可视化
         this.triggerSwingVisualization(data);
@@ -106,49 +108,99 @@ class ResultsModule {
         console.log('创建杆头信息区域:', clubHeadInfo);
     }
 
-    displayFailureFramesDownload(data) {
+    displayTrainingDataCollection(data) {
+        console.log('创建训练数据收集区域...');
+        console.log('训练数据收集 - 完整数据:', data);
+        console.log('训练数据收集 - job_id:', data.job_id);
+        console.log('训练数据收集 - job_id类型:', typeof data.job_id);
+        console.log('训练数据收集 - job_id字符串化:', String(data.job_id));
+        console.log('训练数据收集 - job_id JSON:', JSON.stringify(data.job_id));
         const resultsSection = document.getElementById('resultsSection');
         
-        // 计算失败帧数量
+        // 计算训练数据统计
         const failureFrames = data.club_head_trajectory.filter(point => point[0] === 0 && point[1] === 0).length;
+        const lowConfidenceFrames = data.low_confidence_frames || 0;
+        const totalTrainingFrames = failureFrames + lowConfidenceFrames;
         const failureRate = ((failureFrames / data.total_frames) * 100).toFixed(1);
+        const lowConfidenceRate = ((lowConfidenceFrames / data.total_frames) * 100).toFixed(1);
+        const totalTrainingRate = ((totalTrainingFrames / data.total_frames) * 100).toFixed(1);
         
-        // 只有当有失败帧时才显示下载区域
-        if (failureFrames > 0) {
-            const failureDownload = document.createElement('div');
-            failureDownload.id = 'failureDownload';
-            failureDownload.className = 'result-card';
-            failureDownload.innerHTML = `
-                <h3>🎯 检测失败帧下载</h3>
-                <div class="failure-info">
-                    <div class="failure-stats">
-                        <div class="failure-stat">
-                            <strong>失败帧数:</strong> ${failureFrames} 帧
+        // 只有当有训练数据时才显示收集区域
+        if (totalTrainingFrames > 0) {
+            const trainingData = document.createElement('div');
+            trainingData.id = 'trainingData';
+            trainingData.className = 'result-card';
+            trainingData.innerHTML = `
+                <h3>🎯 训练数据收集</h3>
+                <div class="training-info">
+                    <div class="training-stats">
+                        <div class="stat-grid">
+                            <div class="stat-item failure">
+                                <div class="stat-number">${failureFrames}</div>
+                                <div class="stat-label">失败帧数</div>
+                            </div>
+                            <div class="stat-item low-confidence">
+                                <div class="stat-number">${lowConfidenceFrames}</div>
+                                <div class="stat-label">低置信度帧数</div>
+                            </div>
+                            <div class="stat-item total">
+                                <div class="stat-number">${totalTrainingFrames}</div>
+                                <div class="stat-label">总训练帧数</div>
+                            </div>
                         </div>
-                        <div class="failure-stat">
-                            <strong>失败率:</strong> ${failureRate}%
+                        <div class="training-rates">
+                            <span class="rate-item">失败率: ${failureRate}%</span>
+                            <span class="rate-item">低置信度率: ${lowConfidenceRate}%</span>
+                            <span class="rate-item">总训练数据率: ${totalTrainingRate}%</span>
                         </div>
                     </div>
-                    <div class="failure-description">
-                        <p>检测到 ${failureFrames} 帧未能识别到杆头位置。这些帧的图片可用于模型训练数据增强，提高检测准确率。</p>
+                    <div class="training-description">
+                        <p>收集了 ${totalTrainingFrames} 帧训练数据，包括失败帧和低置信度帧。这些图片可用于模型训练数据增强，提高检测准确率。</p>
                     </div>
                     <div class="download-actions">
-                        <a href="${data.failure_download_url || '#'}" 
+                        <a href="${data.training_data_url || '#'}" 
                            class="download-btn" 
                            target="_blank"
-                           ${!data.failure_download_url ? 'style="opacity: 0.5; pointer-events: none;"' : ''}>
-                            📥 下载失败帧图片
+                           ${!data.training_data_url ? 'style="opacity: 0.5; pointer-events: none;"' : ''}>
+                            📥 下载训练数据图片
                         </a>
-                        ${data.failure_download_url ? '' : '<span class="download-status">正在生成下载页面...</span>'}
+                        <a href="${data.training_data_url || '#'}" 
+                           class="download-btn secondary" 
+                           target="_blank"
+                           ${!data.training_data_url ? 'style="opacity: 0.5; pointer-events: none;"' : ''}>
+                            👁️ 查看训练数据页面
+                        </a>
+                        <button class="download-btn zip-btn" 
+                                id="downloadZipBtn"
+                                data-job-id="${String(data.job_id || '')}"
+                                ${!data.training_data_url ? 'disabled' : ''}>
+                            📦 下载ZIP包
+                        </button>
+                        ${data.training_data_url ? '' : '<span class="download-status">正在生成训练数据收集页面...</span>'}
                     </div>
                 </div>
             `;
             
-            resultsSection.appendChild(failureDownload);
-            console.log('创建失败帧下载区域:', failureDownload);
+            resultsSection.appendChild(trainingData);
+            console.log('创建训练数据收集区域:', trainingData);
+            
+            // 绑定ZIP下载按钮事件
+            const downloadZipBtn = document.getElementById('downloadZipBtn');
+            console.log('查找ZIP下载按钮:', downloadZipBtn);
+            if (downloadZipBtn) {
+                const jobIdFromAttr = downloadZipBtn.getAttribute('data-job-id');
+                console.log('按钮的data-job-id属性:', jobIdFromAttr);
+                downloadZipBtn.addEventListener('click', function() {
+                    const jobId = this.getAttribute('data-job-id');
+                    console.log('ZIP下载按钮点击，jobId:', jobId);
+                    downloadTrainingDataZip(jobId);
+                });
+            } else {
+                console.error('找不到ZIP下载按钮元素');
+            }
 
             // 如果后端还未生成链接，则使用 job_id 继续轮询状态接口，生成后即时更新按钮
-            if (!data.failure_download_url && data.job_id) {
+            if (!data.training_data_url && data.job_id) {
                 let tries = 0;
                 const maxTries = 60; // 最长轮询 2 分钟（60 * 2s）
                 const intervalId = setInterval(async () => {
@@ -157,21 +209,21 @@ class ResultsModule {
                         const r = await fetch(`/analyze/video/status?job_id=${data.job_id}`);
                         if (r.ok) {
                             const j = await r.json();
-                            if (j && j.status === 'done' && j.result && j.result.failure_download_url) {
+                            if (j && j.status === 'done' && j.result && j.result.training_data_url) {
                                 clearInterval(intervalId);
-                                const a = failureDownload.querySelector('.download-actions a.download-btn') || failureDownload.querySelector('.download-btn');
-                                const statusSpan = failureDownload.querySelector('.download-status');
-                                if (a) {
-                                    a.href = j.result.failure_download_url;
-                                    a.style.opacity = '';
-                                    a.style.pointerEvents = '';
-                                }
+                                const buttons = trainingData.querySelectorAll('.download-actions a.download-btn');
+                                const statusSpan = trainingData.querySelector('.download-status');
+                                buttons.forEach(button => {
+                                    button.href = j.result.training_data_url;
+                                    button.style.opacity = '';
+                                    button.style.pointerEvents = '';
+                                });
                                 if (statusSpan) statusSpan.remove();
-                                console.log('失败帧下载链接已就绪:', j.result.failure_download_url);
+                                console.log('训练数据收集链接已就绪:', j.result.training_data_url);
                             }
                         }
                     } catch (e) {
-                        console.warn('检查失败帧下载链接时出错', e);
+                        console.warn('检查训练数据收集链接时出错', e);
                     }
                     if (tries >= maxTries) clearInterval(intervalId);
                 }, 2000);
@@ -199,6 +251,31 @@ class ResultsModule {
         }, 100);
     }
 }
+
+// 添加ZIP下载函数到全局作用域
+window.downloadTrainingDataZip = function(jobId) {
+    console.log('尝试下载ZIP包，jobId:', jobId);
+    console.log('jobId类型:', typeof jobId);
+    console.log('jobId字符串化:', String(jobId));
+    console.log('jobId JSON:', JSON.stringify(jobId));
+    
+    if (!jobId || jobId === 'undefined' || jobId === 'null') {
+        console.error('jobId无效:', jobId);
+        alert('无法下载ZIP包：任务ID无效');
+        return;
+    }
+    
+    const zipUrl = `/analyze/training-data/zip/${jobId}`;
+    console.log('ZIP下载URL:', zipUrl);
+    
+    // 创建下载链接
+    const link = document.createElement('a');
+    link.href = zipUrl;
+    link.download = `training_data_${jobId}.zip`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+};
 
 // 创建全局实例
 window.resultsModule = new ResultsModule();

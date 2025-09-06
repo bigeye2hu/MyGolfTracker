@@ -24,6 +24,9 @@ from analyzer.swing_analyzer import SwingAnalyzer
 from analyzer.trajectory_optimizer import TrajectoryOptimizer
 from analyzer.swing_state_machine import SwingStateMachine, SwingPhase
 from analyzer.strategy_manager import get_strategy_manager
+from app.utils.helpers import get_mp_landmark_names, calculate_trajectory_distance, clean_json_data, check_video_compatibility
+from app.services.html_generator import html_generator_service
+from app.services.video_analysis import video_analysis_service
 
 
 router = APIRouter()
@@ -442,8 +445,8 @@ async def analyze(
                 }
             },
             "mp_result": {
-                "landmarks": _get_mp_landmark_names(),
-                "landmarks_count": len(_get_mp_landmark_names())
+                "landmarks": get_mp_landmark_names(),
+                "landmarks_count": len(get_mp_landmark_names())
             },
             "pose_result": {
                 "poses": poses,
@@ -464,18 +467,18 @@ async def analyze(
                     "min": min([p[1] for p in optimized_trajectory if p[1] != 0], default=0.0),
                     "max": max([p[1] for p in optimized_trajectory if p[1] != 0], default=0.0)
                 },
-                "total_distance": _calculate_trajectory_distance(optimized_trajectory),
-                "average_movement_per_frame": _calculate_trajectory_distance(optimized_trajectory) / max(len(optimized_trajectory), 1)
+                "total_distance": calculate_trajectory_distance(optimized_trajectory),
+                "average_movement_per_frame": calculate_trajectory_distance(optimized_trajectory) / max(len(optimized_trajectory), 1)
             },
             "data_frames": {
                 "mp_data_frame": {
-                    "shape": [len(landmarks_list), len(_get_mp_landmark_names()) * 4],  # x,y,visibility,presence
-                    "columns_count": len(_get_mp_landmark_names()) * 4,
+                    "shape": [len(landmarks_list), len(get_mp_landmark_names()) * 4],  # x,y,visibility,presence
+                    "columns_count": len(get_mp_landmark_names()) * 4,
                     "sample_data": landmarks_list[0][:10] if landmarks_list and landmarks_list[0] else []
                 },
                 "norm_data_frame": {
-                    "shape": [len(landmarks_list), len(_get_mp_landmark_names()) * 2],  # x,y only
-                    "columns_count": len(_get_mp_landmark_names()) * 2,
+                    "shape": [len(landmarks_list), len(get_mp_landmark_names()) * 2],  # x,y only
+                    "columns_count": len(get_mp_landmark_names()) * 2,
                     "sample_data": [landmarks_list[0][i] for i in range(0, min(10, len(landmarks_list[0])), 2)] if landmarks_list and landmarks_list[0] else []
                 }
             },
@@ -505,103 +508,12 @@ async def analyze(
     return response
 
 
-def _get_mp_landmark_names() -> List[str]:
-    """获取 MediaPipe 关键点名称列表"""
-    return [
-        "nose", "left_eye_inner", "left_eye", "left_eye_outer",
-        "right_eye_inner", "right_eye", "right_eye_outer", "left_ear", "right_ear",
-        "mouth_left", "mouth_right", "left_shoulder", "right_shoulder",
-        "left_elbow", "right_elbow", "left_wrist", "right_wrist",
-        "left_pinky", "right_pinky", "left_index", "right_index",
-        "left_thumb", "right_thumb", "left_hip", "right_hip",
-        "left_knee", "right_knee", "left_ankle", "right_ankle",
-        "left_heel", "right_heel", "left_foot_index", "right_foot_index"
-    ]
 
 
-def _calculate_trajectory_distance(trajectory: List[List[float]]) -> float:
-    """计算轨迹总距离"""
-    if len(trajectory) < 2:
-        return 0.0
-    
-    total_distance = 0.0
-    for i in range(1, len(trajectory)):
-        prev_point = trajectory[i-1]
-        curr_point = trajectory[i]
-        
-        # 跳过无效点 (0,0)
-        if prev_point[0] == 0 and prev_point[1] == 0:
-            continue
-        if curr_point[0] == 0 and curr_point[1] == 0:
-            continue
-            
-        # 计算欧几里得距离
-        dx = curr_point[0] - prev_point[0]
-        dy = curr_point[1] - prev_point[1]
-        distance = (dx * dx + dy * dy) ** 0.5
-        total_distance += distance
-    
-    return total_distance
 
 
-def _clean_json_data(data):
-    """递归清理JSON数据中的NaN和无穷大值"""
-    if isinstance(data, dict):
-        return {key: _clean_json_data(value) for key, value in data.items()}
-    elif isinstance(data, list):
-        return [_clean_json_data(item) for item in data]
-    elif isinstance(data, float):
-        if data != data or data == float('inf') or data == float('-inf'):  # NaN or inf
-            return 0.0
-        return data
-    elif isinstance(data, np.floating):
-        if np.isnan(data) or np.isinf(data):
-            return 0.0
-        return float(data)
-    else:
-        return data
 
 
-def _check_video_compatibility(video_path: str) -> dict:
-    """检查视频兼容性"""
-    try:
-        cap = cv2.VideoCapture(video_path)
-        if not cap.isOpened():
-            return {"compatible": False, "error": "无法打开视频文件"}
-        
-        # 获取视频信息
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        fourcc = int(cap.get(cv2.CAP_PROP_FOURCC))
-        fourcc_str = ''.join([chr((fourcc >> 8 * i) & 0xFF) for i in range(4)])
-        
-        cap.release()
-        
-        # 检查编码格式兼容性
-        compatible_formats = ['h264', 'H264', 'avc1', 'AVC1']
-        is_compatible = fourcc_str.lower() in [fmt.lower() for fmt in compatible_formats]
-        
-        return {
-            "compatible": is_compatible,
-            "video_info": {
-                "width": width,
-                "height": height,
-                "fps": fps,
-                "frame_count": frame_count,
-                "codec": fourcc_str,
-                "aspect_ratio": width / height if height > 0 else 0
-            },
-            "compatibility": {
-                "browser_playback": is_compatible,
-                "backend_processing": True,
-                "recommended_format": "H.264 encoded MP4" if not is_compatible else "Current format is compatible"
-            }
-        }
-        
-    except Exception as e:
-        return {"compatible": False, "error": str(e)}
 
 
 @router.get("/visualize/{result_id}")
@@ -1237,7 +1149,7 @@ async def analyze_video_test(
             tmp_path = tmp.name
 
         # 检查视频兼容性
-        compatibility_info = _check_video_compatibility(tmp_path)
+        compatibility_info = check_video_compatibility(tmp_path)
         print(f"视频兼容性检查: {compatibility_info}")
 
         # 后台任务：生成 job_id 并启动线程处理
@@ -1289,7 +1201,7 @@ async def analyze_video_status(job_id: str):
     if job.get("status") == "done":
         # 清理结果中的NaN和无穷大值
         result = job.get("result", {})
-        cleaned_result = _clean_json_data(result)
+        cleaned_result = clean_json_data(result)
         return {"job_id": job_id, "status": "done", "result": cleaned_result}
     if job.get("status") == "error":
         return {"job_id": job_id, "status": "error", "error": job.get("error")}

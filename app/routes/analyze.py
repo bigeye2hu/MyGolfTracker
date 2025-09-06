@@ -28,6 +28,10 @@ from app.utils.helpers import get_mp_landmark_names, calculate_trajectory_distan
 from app.services.html_generator import html_generator_service
 from app.services.video_analysis import video_analysis_service
 from app.services.task_manager import task_manager
+from app.services.file_service import file_service
+from app.services.video_processing import video_processing_service
+from app.services.logging_service import logging_service
+from app.services.response_service import response_service
 from app.config import SERVER_CONFIG, VIDEO_ANALYSIS_CONFIG
 
 

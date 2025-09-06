@@ -27,6 +27,8 @@ from analyzer.strategy_manager import get_strategy_manager
 from app.utils.helpers import get_mp_landmark_names, calculate_trajectory_distance, clean_json_data, check_video_compatibility
 from app.services.html_generator import html_generator_service
 from app.services.video_analysis import video_analysis_service
+from app.services.task_manager import task_manager
+from app.config import SERVER_CONFIG, VIDEO_ANALYSIS_CONFIG
 
 
 router = APIRouter()
@@ -43,11 +45,18 @@ _CONVERSION_JOBS: Dict[str, Dict] = {}
 # 服务器资源监控
 _SERVER_STATUS = {
     "active_conversions": 0,
-    "max_concurrent_conversions": 3,  # 限制并发转换数量
-    "server_load": "normal"
+    "max_concurrent_conversions": SERVER_CONFIG["max_concurrent_conversions"],
+    "server_load": SERVER_CONFIG["default_server_load"]
 }
 
-def _analyze_video_job(job_id: str, video_path: str, resolution: str = "480", confidence: str = "0.01", iou: str = "0.7", max_det: str = "10", optimization_strategy: str = "original") -> None:
+def _analyze_video_job(job_id: str, video_path: str, resolution: str = None, confidence: str = None, iou: str = None, max_det: str = None, optimization_strategy: str = None) -> None:
+    # 使用配置中的默认值
+    resolution = resolution or VIDEO_ANALYSIS_CONFIG["default_resolution"]
+    confidence = confidence or VIDEO_ANALYSIS_CONFIG["default_confidence"]
+    iou = iou or VIDEO_ANALYSIS_CONFIG["default_iou"]
+    max_det = max_det or VIDEO_ANALYSIS_CONFIG["default_max_det"]
+    optimization_strategy = optimization_strategy or VIDEO_ANALYSIS_CONFIG["default_optimization_strategy"]
+    
     try:
         _JOB_STORE[job_id]["status"] = "running"
         detector = YOLOv8Detector()

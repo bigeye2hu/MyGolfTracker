@@ -26,6 +26,7 @@ from analyzer.trajectory_optimizer import TrajectoryOptimizer
 from analyzer.swing_state_machine import SwingStateMachine, SwingPhase
 from analyzer.strategy_manager import get_strategy_manager
 from app.utils.helpers import get_mp_landmark_names, calculate_trajectory_distance, clean_json_data, check_video_compatibility
+from app.config import VIDEO_ANALYSIS_CONFIG
 
 
 class VideoAnalysisService:
@@ -34,9 +35,17 @@ class VideoAnalysisService:
     def __init__(self):
         self.job_store: Dict[str, Dict] = {}
         self.analysis_results: Dict[str, Dict[str, Any]] = {}
+        self.config = VIDEO_ANALYSIS_CONFIG
     
-    def analyze_video_job(self, job_id: str, video_path: str, resolution: str = "480", confidence: str = "0.01", iou: str = "0.7", max_det: str = "10", optimization_strategy: str = "original") -> None:
+    def analyze_video_job(self, job_id: str, video_path: str, resolution: str = None, confidence: str = None, iou: str = None, max_det: str = None, optimization_strategy: str = None) -> None:
         """分析视频任务 - 保持原有逻辑"""
+        # 使用配置中的默认值
+        resolution = resolution or self.config["default_resolution"]
+        confidence = confidence or self.config["default_confidence"]
+        iou = iou or self.config["default_iou"]
+        max_det = max_det or self.config["default_max_det"]
+        optimization_strategy = optimization_strategy or self.config["default_optimization_strategy"]
+        
         # 暂时调用原来的函数，稍后会完全替换
         from app.routes.analyze import _analyze_video_job
         return _analyze_video_job(job_id, video_path, resolution, confidence, iou, max_det, optimization_strategy)

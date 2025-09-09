@@ -33,7 +33,7 @@ MyGolfTracker/
 │   ├── css/               # 样式文件
 │   └── js/                # JavaScript模块
 ├── data/                   # 数据文件
-│   └── ClubDetection_1000P_50R.pt  # YOLOv8模型文件
+│   └── best.pt             # YOLOv8模型文件 (5000张图片训练)
 ├── scripts/                # 脚本文件
 │   ├── start_service.sh   # 启动服务
 │   ├── stop_service.sh    # 停止服务
@@ -69,7 +69,7 @@ pip install -r requirements.txt
 
 4. **启动服务**
 ```bash
-export MODEL_PATH="data/ClubDetection_1000P_50R.pt"
+export MODEL_PATH="data/best.pt"
 uvicorn app.main:app --host 0.0.0.0 --port 5005 --reload
 ```
 
@@ -102,6 +102,8 @@ http://localhost:5005
 - **置信度阈值**：0.05（提高检测率）
 - **推理分辨率**：640x640（平衡精度和性能）
 - **检测策略**：优先使用杆头检测，智能回退到杆身
+- **模型版本**：best.pt (5000张图片训练，109MB)
+- **检测率**：>95% (新模型优化后)
 
 ### 轨迹优化
 

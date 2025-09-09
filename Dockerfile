@@ -16,7 +16,7 @@ deb https://mirrors.ustc.edu.cn/debian-security $VERSION_CODENAME-security main 
 WORKDIR /app
 
 # 先拷贝本地 wheels（若存在，用于离线安装大包如 torch）
-COPY wheels/ /wheels/
+COPY wheels/ /wheels/ 2>/dev/null || mkdir -p /wheels
 
 ARG TORCH_VERSION=2.8.0
 ARG TORCHVISION_VERSION=0.19.0

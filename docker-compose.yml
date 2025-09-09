@@ -6,7 +6,7 @@ services:
     ports:
       - "5005:5005"
     environment:
-      - MODEL_PATH=data/ClubDetection_1000P_50R.pt
+      - MODEL_PATH=data/best.pt
       - SERVICE_PORT=5005
     deploy:
       resources:

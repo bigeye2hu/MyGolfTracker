@@ -1,10 +1,7 @@
 from __future__ import annotations
 from typing import List, Tuple, Optional, Dict, Any
 import numpy as np
-from scipy import signal
-from scipy.signal import savgol_filter
 from .strategy_manager import get_strategy_manager
-from .custom_strategies import register_custom_strategies
 
 
 class TrajectoryOptimizer:
@@ -13,9 +10,6 @@ class TrajectoryOptimizer:
     def __init__(self, confidence_threshold: float = 0.5):
         self.confidence_threshold = confidence_threshold
         self.strategy_manager = get_strategy_manager()
-        # 注册真实策略
-        from .real_strategies import register_real_strategies
-        register_real_strategies(self.strategy_manager)
         
     def optimize_trajectory(self, 
                           raw_trajectory: List[List[float]], 
@@ -97,7 +91,12 @@ class TrajectoryOptimizer:
             )
             
             # 转换回列表格式
-            optimized_trajectory = [[point[0], point[1]] for point in optimized_tuples]
+            optimized_trajectory = []
+            for point in optimized_tuples:
+                if point and point[0] is not None and point[1] is not None:
+                    optimized_trajectory.append([point[0], point[1]])
+                else:
+                    optimized_trajectory.append([0.0, 0.0])
             
             return optimized_trajectory
             

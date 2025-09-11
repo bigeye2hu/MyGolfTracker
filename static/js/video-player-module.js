@@ -313,8 +313,22 @@ class VideoPlayerModule {
         // 清除Canvas
         this.canvasContext.clearRect(0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
         
-        // 查找当前帧的检测结果
-        const detection = this.currentAnalysisData.frame_detections.find(d => d.frame === currentFrame);
+        // 查找当前帧的检测结果 - 强制使用优化后的数据
+        console.log(`🎯 视频播放器查找第${currentFrame}帧检测结果:`);
+        console.log('right_frame_detections存在:', !!this.currentAnalysisData.right_frame_detections);
+        console.log('right_frame_detections长度:', this.currentAnalysisData.right_frame_detections?.length || 0);
+        console.log('frame_detections长度:', this.currentAnalysisData.frame_detections?.length || 0);
+        
+        const detection = this.currentAnalysisData.right_frame_detections?.find(d => d.frame === currentFrame) || 
+                         this.currentAnalysisData.frame_detections?.find(d => d.frame === currentFrame);
+        
+        console.log(`第${currentFrame}帧检测结果:`, detection);
+        if (detection) {
+            console.log(`  - detected: ${detection.detected}`);
+            console.log(`  - is_filled: ${detection.is_filled}`);
+            console.log(`  - x: ${detection.x}, y: ${detection.y}`);
+            console.log(`  - confidence: ${detection.confidence}`);
+        }
         
         if (detection && detection.detected) {
             // 计算检测框在Canvas上的位置
@@ -404,14 +418,16 @@ class VideoPlayerModule {
             currentFrameInfo.textContent = `第 ${currentFrame + 1} 帧 / 共 ${this.currentAnalysisData.total_frames} 帧`;
         }
         
-        // 更新检测信息
-        const detection = this.currentAnalysisData.frame_detections.find(d => d.frame === currentFrame);
+        // 更新检测信息 - 使用补齐后的数据
+        const detection = this.currentAnalysisData.right_frame_detections?.find(d => d.frame === currentFrame) || 
+                         this.currentAnalysisData.frame_detections?.find(d => d.frame === currentFrame);
         const detectionInfo = document.getElementById('currentDetectionInfo');
         
         if (detectionInfo) {
             if (detection && detection.detected) {
+                const statusText = detection.is_filled ? '✅ 检测到杆头 (已补齐)' : '✅ 检测到杆头';
                 detectionInfo.innerHTML = `
-                    <p><strong>检测状态:</strong> ✅ 检测到杆头</p>
+                    <p><strong>检测状态:</strong> ${statusText}</p>
                     <p><strong>坐标:</strong> X: ${detection.x}, Y: ${detection.y}</p>
                     <p><strong>置信度:</strong> ${Math.round(detection.confidence * 100)}%</p>
                     <p><strong>帧索引:</strong> ${detection.frame}</p>

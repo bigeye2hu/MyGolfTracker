@@ -32,262 +32,126 @@ class OptimizationStrategy(ABC):
         """获取策略信息"""
         return self.info
 
-class SavitzkyGolayStrategy(OptimizationStrategy):
-    """Savitzky-Golay滤波策略"""
+class AutoFillStrategy(OptimizationStrategy):
+    """自动补齐策略 - 将未检测到的帧自动补齐到最近有效帧位置"""
     
     def __init__(self):
         super().__init__(StrategyInfo(
-            id="savitzky_golay",
-            name="Savitzky-Golay滤波",
-            description="使用Savitzky-Golay滤波器平滑轨迹，保持峰值特征",
-            category="smoothing",
-            parameters={
-                "window_length": 5,
-                "polyorder": 2
-            }
-        ))
-    
-    def optimize(self, trajectory: List[Tuple[float, float]], **kwargs) -> List[Tuple[float, float]]:
-        if len(trajectory) < 3:
-            return trajectory
-        
-        window_length = kwargs.get('window_length', self.info.parameters['window_length'])
-        polyorder = kwargs.get('polyorder', self.info.parameters['polyorder'])
-        
-        # 确保窗口长度不超过数据长度
-        window_length = min(window_length, len(trajectory))
-        if window_length % 2 == 0:
-            window_length -= 1
-        
-        try:
-            from scipy.signal import savgol_filter
-            
-            x_coords = [point[0] for point in trajectory]
-            y_coords = [point[1] for point in trajectory]
-            
-            # 处理无效值
-            x_coords = [x if x is not None and not np.isnan(x) else 0 for x in x_coords]
-            y_coords = [y if y is not None and not np.isnan(y) else 0 for y in y_coords]
-            
-            if len(x_coords) >= window_length:
-                x_smooth = savgol_filter(x_coords, window_length, polyorder)
-                y_smooth = savgol_filter(y_coords, window_length, polyorder)
-                
-                return list(zip(x_smooth, y_smooth))
-            else:
-                return trajectory
-                
-        except ImportError:
-            # 如果没有scipy，使用简单的移动平均
-            return self._simple_smoothing(trajectory, window_length)
-    
-    def _simple_smoothing(self, trajectory: List[Tuple[float, float]], window: int) -> List[Tuple[float, float]]:
-        """简单的移动平均平滑"""
-        if len(trajectory) <= window:
-            return trajectory
-        
-        result = []
-        for i in range(len(trajectory)):
-            start = max(0, i - window // 2)
-            end = min(len(trajectory), i + window // 2 + 1)
-            
-            window_data = trajectory[start:end]
-            valid_points = [p for p in window_data if p[0] is not None and p[1] is not None]
-            
-            if valid_points:
-                avg_x = sum(p[0] for p in valid_points) / len(valid_points)
-                avg_y = sum(p[1] for p in valid_points) / len(valid_points)
-                result.append((avg_x, avg_y))
-            else:
-                result.append(trajectory[i])
-        
-        return result
-
-class KalmanFilterStrategy(OptimizationStrategy):
-    """卡尔曼滤波策略"""
-    
-    def __init__(self):
-        super().__init__(StrategyInfo(
-            id="kalman_filter",
-            name="卡尔曼滤波",
-            description="使用卡尔曼滤波器进行轨迹预测和平滑",
-            category="prediction",
-            parameters={
-                "process_noise": 0.1,
-                "measurement_noise": 0.5
-            }
-        ))
-    
-    def optimize(self, trajectory: List[Tuple[float, float]], **kwargs) -> List[Tuple[float, float]]:
-        if len(trajectory) < 2:
-            return trajectory
-        
-        process_noise = kwargs.get('process_noise', self.info.parameters['process_noise'])
-        measurement_noise = kwargs.get('measurement_noise', self.info.parameters['measurement_noise'])
-        
-        # 简化的卡尔曼滤波实现
-        result = []
-        x, y = trajectory[0]
-        vx, vy = 0, 0
-        
-        for i, (mx, my) in enumerate(trajectory):
-            if mx is None or my is None or np.isnan(mx) or np.isnan(my):
-                result.append((x, y))
-                continue
-            
-            # 预测步骤
-            x_pred = x + vx
-            y_pred = y + vy
-            
-            # 更新步骤
-            k = process_noise / (process_noise + measurement_noise)
-            x = x_pred + k * (mx - x_pred)
-            y = y_pred + k * (my - y_pred)
-            
-            # 更新速度
-            if i > 0:
-                vx = x - result[-1][0]
-                vy = y - result[-1][1]
-            
-            result.append((x, y))
-        
-        return result
-
-class LinearInterpolationStrategy(OptimizationStrategy):
-    """线性插值策略"""
-    
-    def __init__(self):
-        super().__init__(StrategyInfo(
-            id="linear_interpolation",
-            name="线性插值",
-            description="对缺失点进行线性插值填充",
+            id="auto_fill",
+            name="自动补齐算法",
+            description="将未检测到的帧自动补齐到最近有效帧位置，提高轨迹连续性",
             category="interpolation",
             parameters={
-                "max_gap": 5
+                "max_gap": 10,  # 最大填补间隔
+                "interpolation_method": "linear"  # 插值方法
             }
         ))
     
     def optimize(self, trajectory: List[Tuple[float, float]], **kwargs) -> List[Tuple[float, float]]:
-        if len(trajectory) < 2:
+        """
+        自动补齐轨迹数据
+        
+        Args:
+            trajectory: 原始轨迹数据 [(x, y), ...]
+            **kwargs: 额外参数
+            
+        Returns:
+            补齐后的轨迹数据
+        """
+        if not trajectory or len(trajectory) < 2:
             return trajectory
         
-        max_gap = kwargs.get('max_gap', self.info.parameters['max_gap'])
-        result = []
+        print(f"🔍 AutoFillStrategy.optimize 输入轨迹长度: {len(trajectory)}")
+        print(f"🔍 前10个点: {trajectory[:10]}")
+        print(f"🔍 第17个点: {trajectory[17] if len(trajectory) > 17 else '不存在'}")
         
-        for i, point in enumerate(trajectory):
-            if point[0] is not None and point[1] is not None and not np.isnan(point[0]) and not np.isnan(point[1]):
-                result.append(point)
-            else:
-                # 寻找前后有效点进行插值
-                prev_valid = None
-                next_valid = None
-                
-                # 向前查找
-                for j in range(i-1, -1, -1):
-                    if (trajectory[j][0] is not None and trajectory[j][1] is not None and 
-                        not np.isnan(trajectory[j][0]) and not np.isnan(trajectory[j][1])):
-                        prev_valid = trajectory[j]
-                        break
-                
-                # 向后查找
-                for j in range(i+1, len(trajectory)):
-                    if (trajectory[j][0] is not None and trajectory[j][1] is not None and 
-                        not np.isnan(trajectory[j][0]) and not np.isnan(trajectory[j][1])):
-                        next_valid = trajectory[j]
-                        break
-                
-                if prev_valid and next_valid:
-                    # 线性插值
-                    gap = next_valid[0] - prev_valid[0] if next_valid[0] != prev_valid[0] else 1
-                    t = (i - (i - gap)) / gap if gap != 0 else 0
-                    
-                    interp_x = prev_valid[0] + t * (next_valid[0] - prev_valid[0])
-                    interp_y = prev_valid[1] + t * (next_valid[1] - prev_valid[1])
-                    result.append((interp_x, interp_y))
-                elif prev_valid:
-                    result.append(prev_valid)
-                elif next_valid:
-                    result.append(next_valid)
-                else:
-                    result.append((0, 0))
+        # 转换为numpy数组便于处理
+        traj_array = np.array(trajectory)
+        x_coords = traj_array[:, 0]
+        y_coords = traj_array[:, 1]
         
-        return result
+        # 识别有效检测点（非零且非None坐标）
+        # 首先处理None值：将None转换为0
+        x_coords_clean = np.array([0 if x is None else x for x in x_coords])
+        y_coords_clean = np.array([0 if y is None else y for y in y_coords])
+        
+        # 检查是否为有效点（非零坐标）
+        valid_mask = (x_coords_clean != 0) & (y_coords_clean != 0)
+        valid_indices = np.where(valid_mask)[0]
+        
+        print(f"🔍 有效检测点索引: {valid_indices[:10]}... (共{len(valid_indices)}个)")
+        print(f"🔍 第17帧坐标: x={x_coords[17]}, y={y_coords[17]}")
+        print(f"🔍 第17帧是否有效: {valid_mask[17]}")
+        
+        if len(valid_indices) < 2:
+            print("❌ 有效检测点少于2个，无法补齐")
+            return trajectory
+        
+        # 补齐缺失的帧
+        filled_x = self._fill_missing_frames(x_coords_clean, valid_indices)
+        filled_y = self._fill_missing_frames(y_coords_clean, valid_indices)
+        
+        # 重新组合轨迹
+        filled_trajectory = list(zip(filled_x, filled_y))
+        
+        print(f"🔍 补齐后轨迹长度: {len(filled_trajectory)}")
+        print(f"🔍 补齐后第17个点: {filled_trajectory[17] if len(filled_trajectory) > 17 else '不存在'}")
+        
+        return filled_trajectory
+    
+    def _fill_missing_frames(self, coords: np.ndarray, valid_indices: np.ndarray) -> np.ndarray:
+        """
+        填补缺失帧的坐标
+        
+        Args:
+            coords: 坐标数组
+            valid_indices: 有效检测点的索引
+            
+        Returns:
+            填补后的坐标数组
+        """
+        filled_coords = coords.copy()
+        max_gap = self.info.parameters.get("max_gap", 10)
+        
+        print(f"🔍 _fill_missing_frames 开始，max_gap={max_gap}")
+        print(f"🔍 有效索引: {valid_indices[:10]}... (共{len(valid_indices)}个)")
+        
+        for i in range(len(valid_indices) - 1):
+            start_idx = valid_indices[i]
+            end_idx = valid_indices[i + 1]
+            gap_size = end_idx - start_idx - 1
+            
+            if gap_size > 0:
+                print(f"🔍 检查间隔 {start_idx} -> {end_idx}, 间隔大小: {gap_size}")
+            
+            # 只填补小间隔的缺失帧
+            if 0 < gap_size <= max_gap:
+                start_val = coords[start_idx]
+                end_val = coords[end_idx]
+                
+                print(f"🔍 填补间隔 {start_idx}-{end_idx}: {start_val} -> {end_val}")
+                
+                # 线性插值填补
+                for j in range(1, gap_size + 1):
+                    alpha = j / (gap_size + 1)
+                    interpolated_val = start_val + alpha * (end_val - start_val)
+                    filled_coords[start_idx + j] = interpolated_val
+                    print(f"🔍   填补位置 {start_idx + j}: {interpolated_val}")
+            elif gap_size > max_gap:
+                print(f"🔍 间隔 {start_idx}-{end_idx} 太大 ({gap_size} > {max_gap})，跳过")
+        
+        print(f"🔍 填补完成，第17帧值: {filled_coords[17]}")
+        return filled_coords
 
-class OutlierRemovalStrategy(OptimizationStrategy):
-    """异常值移除策略"""
-    
-    def __init__(self):
-        super().__init__(StrategyInfo(
-            id="outlier_removal",
-            name="异常值移除",
-            description="移除轨迹中的异常跳跃点",
-            category="cleaning",
-            parameters={
-                "threshold": 0.1,
-                "min_points": 3
-            }
-        ))
-    
-    def optimize(self, trajectory: List[Tuple[float, float]], **kwargs) -> List[Tuple[float, float]]:
-        if len(trajectory) < 3:
-            return trajectory
-        
-        threshold = kwargs.get('threshold', self.info.parameters['threshold'])
-        min_points = kwargs.get('min_points', self.info.parameters['min_points'])
-        
-        result = []
-        valid_points = [(i, point) for i, point in enumerate(trajectory) 
-                       if point[0] is not None and point[1] is not None 
-                       and not np.isnan(point[0]) and not np.isnan(point[1])]
-        
-        if len(valid_points) < min_points:
-            return trajectory
-        
-        for i, point in enumerate(trajectory):
-            if point[0] is None or point[1] is None or np.isnan(point[0]) or np.isnan(point[1]):
-                result.append((0, 0))
-                continue
-            
-            # 计算与前后点的距离
-            is_outlier = False
-            if i > 0 and i < len(trajectory) - 1:
-                prev_point = trajectory[i-1]
-                next_point = trajectory[i+1]
-                
-                if (prev_point[0] is not None and prev_point[1] is not None and 
-                    next_point[0] is not None and next_point[1] is not None):
-                    
-                    dist_prev = np.sqrt((point[0] - prev_point[0])**2 + (point[1] - prev_point[1])**2)
-                    dist_next = np.sqrt((point[0] - next_point[0])**2 + (point[1] - next_point[1])**2)
-                    
-                    if dist_prev > threshold or dist_next > threshold:
-                        is_outlier = True
-            
-            if is_outlier:
-                # 使用前后点的平均值
-                if i > 0 and i < len(trajectory) - 1:
-                    prev_point = trajectory[i-1]
-                    next_point = trajectory[i+1]
-                    if (prev_point[0] is not None and prev_point[1] is not None and 
-                        next_point[0] is not None and next_point[1] is not None):
-                        avg_x = (prev_point[0] + next_point[0]) / 2
-                        avg_y = (prev_point[1] + next_point[1]) / 2
-                        result.append((avg_x, avg_y))
-                    else:
-                        result.append(point)
-                else:
-                    result.append(point)
-            else:
-                result.append(point)
-        
-        return result
+
+# 只保留AutoFillStrategy，其他策略已删除
 
 class StrategyManager:
     """策略管理器"""
     
     def __init__(self):
         self.strategies: Dict[str, OptimizationStrategy] = {}
-        self._register_default_strategies()
+        self.register_default_strategies()
     
     def _register_default_strategies(self):
         """注册默认策略 - 已禁用，只使用真实策略"""
@@ -297,6 +161,12 @@ class StrategyManager:
         """注册策略"""
         self.strategies[strategy.info.id] = strategy
         print(f"已注册策略: {strategy.info.name} ({strategy.info.id})")
+    
+    def register_default_strategies(self):
+        """注册默认策略 - 只注册自动补齐策略"""
+        # 只注册自动补齐策略
+        auto_fill_strategy = AutoFillStrategy()
+        self.register_strategy(auto_fill_strategy)
     
     def get_strategy(self, strategy_id: str) -> OptimizationStrategy:
         """获取策略"""

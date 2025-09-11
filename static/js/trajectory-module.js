@@ -59,16 +59,10 @@ class TrajectoryModule {
         trajectoryChart.innerHTML = `
             <div class="trajectory-controls" style="margin-bottom: 15px;">
                 <label style="margin-right: 15px;">
-                    <input type="radio" name="trajectoryType" value="original" checked> 原始检测数据
-                </label>
-                <label style="margin-right: 15px;">
-                    <input type="radio" name="trajectoryType" value="optimized"> 标准优化
-                </label>
-                <label style="margin-right: 15px;">
-                    <input type="radio" name="trajectoryType" value="fast_motion"> 快速移动优化
+                    <input type="radio" name="trajectoryType" value="auto_fill" checked> 自动补齐优化
                 </label>
                 <label>
-                    <input type="radio" name="trajectoryType" value="comparison"> 三线对比
+                    <input type="radio" name="trajectoryType" value="comparison"> 对比显示
                 </label>
             </div>
             <div class="canvas-container" style="text-align: center; margin: 10px 0;">
@@ -110,18 +104,20 @@ class TrajectoryModule {
         ctx.clearRect(0, 0, width, height);
 
         // 获取当前选择的轨迹类型
-        const selectedType = document.querySelector('input[name="trajectoryType"]:checked')?.value || 'original';
+        const selectedType = document.querySelector('input[name="trajectoryType"]:checked')?.value || 'auto_fill';
         
         // 根据选择获取轨迹数据
-        let trajectoryData = data.club_head_trajectory;
-        let trajectoryLabel = '原始检测数据';
+        let trajectoryData = data.club_head_trajectory; // 默认使用优化后的数据
+        let trajectoryLabel = '自动补齐优化数据';
         
-        if (selectedType === 'optimized' && data.optimized_trajectory) {
-            trajectoryData = data.optimized_trajectory;
-            trajectoryLabel = '标准优化数据';
-        } else if (selectedType === 'fast_motion' && data.fast_motion_trajectory) {
-            trajectoryData = data.fast_motion_trajectory;
-            trajectoryLabel = '快速移动优化数据';
+        if (selectedType === 'auto_fill') {
+            // 使用自动补齐后的数据
+            trajectoryData = data.club_head_trajectory; // 这是优化后的数据
+            trajectoryLabel = '自动补齐优化数据';
+        } else if (selectedType === 'comparison') {
+            // 对比显示：显示原始检测数据
+            trajectoryData = data.original_trajectory || data.left_view_trajectory;
+            trajectoryLabel = '原始检测数据对比';
         }
 
         // 过滤掉零值坐标（归一化坐标中0,0表示未检测到）

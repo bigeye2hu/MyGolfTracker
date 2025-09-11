@@ -54,21 +54,20 @@ class UploadModule {
                     <!-- 优化策略选择 -->
                     <div class="strategy-selector" style="margin: 20px 0; padding: 15px; background: #e8f5e8; border-radius: 10px; border: 1px solid #c3e6c3;">
                         <h3 style="margin: 0 0 10px 0; color: #2d5a2d; font-size: 16px;">🎯 轨迹优化策略选择</h3>
-                        <p style="margin: 0 0 15px 0; color: #2d5a2d; font-size: 14px;">选择不同的轨迹优化算法来改善检测结果</p>
+                        <p style="margin: 0 0 15px 0; color: #2d5a2d; font-size: 14px;">选择轨迹优化算法来改善检测结果</p>
                         
                         <div class="strategy-options" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
                             <label style="display: flex; align-items: center; padding: 10px 12px; background: white; border: 2px solid #28a745; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
-                                <input type="radio" name="optimizationStrategy" value="original" checked style="margin-right: 8px;">
+                                <input type="radio" name="optimizationStrategy" value="auto_fill" checked style="margin-right: 8px;">
                                 <div>
-                                    <div style="font-weight: 600; color: #2d5a2d;">原始检测</div>
-                                    <small style="color: #6c757d;">不进行轨迹优化，使用原始检测结果</small>
+                                    <div style="font-weight: 600; color: #2d5a2d;">自动补齐算法</div>
+                                    <small style="color: #6c757d;">将未检测到的帧自动补齐到最近有效帧位置</small>
                                 </div>
                             </label>
-                            <!-- 其他策略选项将通过JavaScript动态添加 -->
                         </div>
                         
                         <div id="strategyDescription" class="strategy-description" style="margin-top: 10px; padding: 8px 12px; background: #f8f9fa; border-radius: 4px; font-size: 12px; color: #6c757d; line-height: 1.4; min-height: 20px;">
-                            选择原始检测，不进行轨迹优化
+                            自动补齐算法：智能填充未检测帧，提高轨迹连续性
                         </div>
                     </div>
                     
@@ -259,51 +258,27 @@ class UploadModule {
         // 清空现有选项
         strategyOptions.innerHTML = '';
         
-        // 添加原始检测选项
-        const originalLabel = document.createElement('label');
-        originalLabel.style.cssText = 'display: flex; align-items: center; padding: 10px 12px; background: white; border: 2px solid #28a745; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;';
-        originalLabel.innerHTML = `
-            <input type="radio" name="optimizationStrategy" value="original" checked style="margin-right: 8px;">
+        // 不再添加原始检测选项，只使用自动补齐算法
+        
+        // 确保始终显示自动补齐算法选项，无论API是否成功
+        const autoFillStrategy = this.availableStrategies?.auto_fill || {
+            name: "自动补齐算法",
+            description: "将未检测到的帧自动补齐到最近有效帧位置，提高轨迹连续性"
+        };
+        
+        const label = document.createElement('label');
+        label.style.cssText = 'display: flex; align-items: center; padding: 10px 12px; background: white; border: 2px solid #28a745; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;';
+        
+        label.innerHTML = `
+            <input type="radio" name="optimizationStrategy" value="auto_fill" checked style="margin-right: 8px;">
             <div>
-                <div style="font-weight: 600; color: #2d5a2d;">原始检测</div>
-                <small style="color: #6c757d;">不进行轨迹优化，使用原始检测结果</small>
+                <div style="font-weight: 600; color: #2d5a2d;">${autoFillStrategy.name}</div>
+                <small style="color: #6c757d;">${autoFillStrategy.description}</small>
             </div>
         `;
-        strategyOptions.appendChild(originalLabel);
-        console.log('✅ 添加原始检测选项');
         
-        // 添加所有策略选项
-        if (this.availableStrategies) {
-            let strategyCount = 0;
-            Object.entries(this.availableStrategies).forEach(([id, strategy]) => {
-                // 跳过原始检测，因为已经单独添加了
-                if (id === 'original') return;
-                
-                const label = document.createElement('label');
-                label.style.cssText = 'display: flex; align-items: center; padding: 10px 12px; background: white; border: 2px solid #e9ecef; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;';
-                
-                // 为智能插值策略添加特殊样式
-                if (id === 'smart_interpolation') {
-                    label.style.borderColor = '#007bff';
-                    label.style.backgroundColor = '#f8f9ff';
-                }
-                
-                label.innerHTML = `
-                    <input type="radio" name="optimizationStrategy" value="${id}" style="margin-right: 8px;">
-                    <div>
-                        <div style="font-weight: 600; color: #2d5a2d;">${strategy.name}</div>
-                        <small style="color: #6c757d;">${strategy.description}</small>
-                    </div>
-                `;
-                
-                strategyOptions.appendChild(label);
-                strategyCount++;
-                console.log(`✅ 添加策略选项: ${id} - ${strategy.name}`);
-            });
-            console.log(`✅ 总共添加了 ${strategyCount} 个策略选项`);
-        } else {
-            console.warn('⚠️ 没有可用策略数据');
-        }
+        strategyOptions.appendChild(label);
+        console.log(`✅ 添加策略选项: auto_fill - ${autoFillStrategy.name}`);
     }
 
     bindStrategyEvents() {
@@ -330,11 +305,11 @@ class UploadModule {
         
         if (!selectedStrategy || !descriptionDiv) return;
         
-        if (selectedStrategy.value === 'original') {
-            descriptionDiv.textContent = '选择原始检测，不进行轨迹优化';
-        } else if (this.availableStrategies && this.availableStrategies[selectedStrategy.value]) {
+        if (this.availableStrategies && this.availableStrategies[selectedStrategy.value]) {
             const strategy = this.availableStrategies[selectedStrategy.value];
             descriptionDiv.textContent = `${strategy.name}: ${strategy.description}`;
+        } else {
+            descriptionDiv.textContent = '自动补齐算法：智能填充未检测帧，提高轨迹连续性';
         }
     }
 

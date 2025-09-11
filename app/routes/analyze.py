@@ -713,10 +713,6 @@ async def get_strategies():
     """获取所有可用策略"""
     try:
         strategy_manager = get_strategy_manager()
-        # 只注册真实策略
-        from analyzer.real_strategies import register_real_strategies
-        register_real_strategies(strategy_manager)
-        
         strategies = strategy_manager.get_all_strategies()
         return {"strategies": strategies}
     except Exception as e:
@@ -727,10 +723,6 @@ async def get_strategies_by_category(category: str):
     """按类别获取策略"""
     try:
         strategy_manager = get_strategy_manager()
-        # 只注册真实策略
-        from analyzer.real_strategies import register_real_strategies
-        register_real_strategies(strategy_manager)
-        
         strategies = strategy_manager.get_strategies_by_category(category)
         return {"strategies": strategies, "category": category}
     except Exception as e:
@@ -856,7 +848,7 @@ async def analyze_video_test(
     confidence: str = Form("0.01"),
     iou: str = Form("0.7"),
     max_det: str = Form("10"),
-    optimization_strategy: str = Form("original")
+    optimization_strategy: str = Form("auto_fill")
 ):
     """分析上传的视频文件，返回YOLOv8检测结果"""
     print(f"收到视频上传请求: {video.filename}, 类型: {video.content_type}, 大小: {video.size}")

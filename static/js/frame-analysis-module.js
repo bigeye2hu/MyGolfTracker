@@ -18,12 +18,19 @@ class FrameAnalysisModule {
     }
 
     createFrameAnalysisSection(data) {
+        console.log('🔍 FrameAnalysisModule 收到 resultsUpdated 事件');
         this.currentAnalysisData = data;
         
         // 检查是否已存在帧分析区域
-        if (document.querySelector('.frame-analysis-section')) {
+        const existingSection = document.querySelector('.frame-analysis-section');
+        if (existingSection) {
+            console.log('⚠️ 帧分析区域已存在，更新数据并刷新显示');
+            // 即使区域已存在，也要更新数据并刷新显示
+            this.refreshFrameDisplay();
             return;
         }
+        
+        console.log('✅ 开始创建帧分析区域');
 
         // 等待轨迹图表创建完成
         const trajectoryChart = document.getElementById('trajectoryChart');
@@ -118,8 +125,31 @@ class FrameAnalysisModule {
         const frameCard = document.createElement('div');
         frameCard.className = 'frame-card';
         
-        // 查找该帧的检测结果
-        const detection = this.currentAnalysisData.frame_detections.find(d => d.frame === frameIndex);
+        // 查找该帧的检测结果 - 强制使用优化后的数据
+        console.log(`🔍 帧分析模块查找第${frameIndex}帧的检测结果:`);
+        console.log('right_frame_detections存在:', !!this.currentAnalysisData.right_frame_detections);
+        console.log('right_frame_detections长度:', this.currentAnalysisData.right_frame_detections?.length || 0);
+        console.log('frame_detections长度:', this.currentAnalysisData.frame_detections?.length || 0);
+        
+        // 强制优先使用right_frame_detections
+        let detection = null;
+        if (this.currentAnalysisData.right_frame_detections) {
+            detection = this.currentAnalysisData.right_frame_detections.find(d => d.frame === frameIndex);
+            console.log(`从right_frame_detections查找第${frameIndex}帧:`, detection);
+        }
+        
+        if (!detection && this.currentAnalysisData.frame_detections) {
+            detection = this.currentAnalysisData.frame_detections.find(d => d.frame === frameIndex);
+            console.log(`从frame_detections查找第${frameIndex}帧:`, detection);
+        }
+        
+        console.log(`第${frameIndex}帧最终检测结果:`, detection);
+        if (detection) {
+            console.log(`  - detected: ${detection.detected}`);
+            console.log(`  - is_filled: ${detection.is_filled}`);
+            console.log(`  - x: ${detection.x}, y: ${detection.y}`);
+            console.log(`  - confidence: ${detection.confidence}`);
+        }
         
         if (detection && detection.detected) {
             frameCard.innerHTML = `
@@ -176,7 +206,15 @@ class FrameAnalysisModule {
         
         if (!frameDetails || !frameDetailContent) return;
 
-        const detection = this.currentAnalysisData.frame_detections.find(d => d.frame === frameIndex);
+        // 查找该帧的检测结果 - 使用优化后的数据
+        console.log(`🔍 详情页查找第${frameIndex}帧的检测结果:`);
+        console.log('right_frame_detections:', this.currentAnalysisData.right_frame_detections?.length || 0);
+        console.log('frame_detections:', this.currentAnalysisData.frame_detections?.length || 0);
+        
+        const detection = this.currentAnalysisData.right_frame_detections?.find(d => d.frame === frameIndex) ||
+                         this.currentAnalysisData.frame_detections?.find(d => d.frame === frameIndex);
+        
+        console.log(`第${frameIndex}帧详情检测结果:`, detection);
         
         if (detection && detection.detected) {
             frameDetailContent.innerHTML = `
@@ -253,6 +291,17 @@ class FrameAnalysisModule {
         if (frameControls) {
             frameControls.style.display = 'none';
         }
+    }
+    
+    refreshFrameDisplay() {
+        console.log('🔄 刷新帧显示，使用新数据');
+        if (!this.currentAnalysisData) {
+            console.log('❌ 没有分析数据，无法刷新');
+            return;
+        }
+        
+        // 重新渲染当前页的帧
+        this.renderCurrentPage();
     }
 
     updatePageButtonStates() {

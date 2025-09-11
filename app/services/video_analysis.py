@@ -171,16 +171,20 @@ class VideoAnalysisService:
             strategy_trajectories["original"] = original_trajectory  # 原始检测结果
             
             print(f"🔄 开始生成所有策略轨迹...")
+            print(f"🔄 可用策略: {list(available_strategies.keys())}")
             for strategy_id, strategy_info in available_strategies.items():
                 # 处理所有策略，不只是real_开头的
                 if strategy_id != "original":  # 跳过原始检测
                     try:
-                        print(f"  🔍 处理策略: {strategy_info.name}")
+                        print(f"  🔍 处理策略: {strategy_info.name} (ID: {strategy_id})")
                         trajectory = trajectory_optimizer.optimize_with_strategy(norm_trajectory, strategy_id)
+                        print(f"  🔍 策略 {strategy_id} 返回轨迹长度: {len(trajectory)}")
                         strategy_trajectories[strategy_id] = clean_trajectory(trajectory)
                         print(f"  ✅ 策略 {strategy_info.name} 生成成功")
                     except Exception as e:
                         print(f"  ❌ 策略 {strategy_id} 生成失败: {e}")
+                        import traceback
+                        traceback.print_exc()
                         strategy_trajectories[strategy_id] = original_trajectory  # 失败时使用原始数据
             
             # 4. 确定用户选择的最终轨迹（用于右画面）
@@ -213,7 +217,76 @@ class VideoAnalysisService:
                 # 使用默认状态
                 swing_phases = [SwingPhase.UNKNOWN] * len(norm_trajectory)
 
-            # 5. 构建结果字典，明确双画面数据来源
+            # 5. 生成补齐后的frame_detections数据（用于右画面显示）
+            print(f"🔍 开始生成filled_frame_detections，总帧数: {total_frames}")
+            print(f"🔍 final_trajectory长度: {len(final_trajectory)}")
+            print(f"🔍 frame_detections长度: {len(frame_detections)}")
+            print(f"🔍 final_trajectory前10个点: {final_trajectory[:10]}")
+            print(f"🔍 final_trajectory第17个点: {final_trajectory[17] if len(final_trajectory) > 17 else '不存在'}")
+            
+            filled_frame_detections = []
+            for i in range(total_frames):
+                original_detection = frame_detections[i] if i < len(frame_detections) else None
+                
+                if original_detection and original_detection.get("detected", False):
+                    # 原始检测成功，使用原始数据
+                    filled_frame_detections.append(original_detection)
+                else:
+                    # 原始检测失败，使用补齐的数据
+                    if i < len(final_trajectory):
+                        point = final_trajectory[i]
+                        if i == 17:  # 特别调试第17帧
+                            print(f"🔍 处理第17帧: point={point}")
+                        if point and point[0] != 0 and point[1] != 0:
+                            # 将归一化坐标转换为像素坐标
+                            pixel_x = int(point[0] * video_width)
+                            pixel_y = int(point[1] * video_height)
+                            
+                            filled_frame_detections.append({
+                                "frame": i,
+                                "detected": True,
+                                "x": pixel_x,
+                                "y": pixel_y,
+                                "confidence": 0.5,  # 补齐的数据给一个中等置信度
+                                "norm_x": point[0],
+                                "norm_y": point[1],
+                                "is_filled": True  # 标记为补齐的数据
+                            })
+                        else:
+                            # 没有补齐数据
+                            filled_frame_detections.append({
+                                "frame": i,
+                                "detected": False,
+                                "x": 0,
+                                "y": 0,
+                                "confidence": 0.0,
+                                "norm_x": 0.0,
+                                "norm_y": 0.0,
+                                "is_filled": False
+                            })
+                    else:
+                        # 超出轨迹长度
+                        filled_frame_detections.append({
+                            "frame": i,
+                            "detected": False,
+                            "x": 0,
+                            "y": 0,
+                            "confidence": 0.0,
+                            "norm_x": 0.0,
+                            "norm_y": 0.0,
+                            "is_filled": False
+                        })
+
+            # 统计补齐效果
+            filled_count = sum(1 for d in filled_frame_detections if d.get("is_filled", False))
+            detected_count = sum(1 for d in filled_frame_detections if d.get("detected", False))
+            print(f"✅ filled_frame_detections生成完成:")
+            print(f"   - 总帧数: {len(filled_frame_detections)}")
+            print(f"   - 检测到帧数: {detected_count}")
+            print(f"   - 补齐帧数: {filled_count}")
+            print(f"   - 前5帧示例: {filled_frame_detections[:5]}")
+
+        # 6. 构建结果字典，明确双画面数据来源
             result = {
                 "total_frames": total_frames,
                 "detected_frames": detected_frames,
@@ -223,6 +296,8 @@ class VideoAnalysisService:
                 # ===== 双画面数据 =====
                 "left_view_trajectory": original_trajectory,    # 左画面：永远显示原始YOLOv8检测结果
                 "right_view_trajectory": final_trajectory,      # 右画面：用户选择的策略结果
+                "left_frame_detections": frame_detections,      # 左画面：原始检测数据
+                "right_frame_detections": filled_frame_detections, # 右画面：补齐后的检测数据
                 
                 # ===== 向后兼容字段 =====
                 "club_head_trajectory": final_trajectory,       # 用户选择的最终轨迹
@@ -239,7 +314,7 @@ class VideoAnalysisService:
                 },
                 
                 # ===== 其他数据 =====
-                "frame_detections": frame_detections,
+                "frame_detections": frame_detections,  # 保持向后兼容
                 "swing_phases": [phase.value for phase in swing_phases],  # 挥杆状态序列
                 "video_info": {
                     "width": video_width,

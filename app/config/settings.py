@@ -19,7 +19,7 @@ VIDEO_ANALYSIS_CONFIG = {
     "default_confidence": "0.01",
     "default_iou": "0.7",
     "default_max_det": "10",
-    "default_optimization_strategy": "original",
+    "default_optimization_strategy": "auto_fill",
     "supported_formats": ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm'],
     "max_file_size": 100 * 1024 * 1024,  # 100MB
     "jpeg_quality": 90

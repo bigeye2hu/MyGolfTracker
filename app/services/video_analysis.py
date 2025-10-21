@@ -204,11 +204,11 @@ class VideoAnalysisService:
             # 使用快速移动优化器（从策略中获取）
             fast_motion_trajectory = strategy_trajectories.get('real_fast_motion', original_trajectory)
             
-            # 挥杆状态分析
+            # 挥杆状态分析（使用右画面的最终轨迹，包含补齐/平滑，Top 更稳）
             print("🎯 开始挥杆状态分析...")
             try:
                 swing_state_machine = SwingStateMachine()
-                swing_phases = swing_state_machine.analyze_swing(norm_trajectory)
+                swing_phases = swing_state_machine.analyze_swing(final_trajectory)
                 print(f"✅ 挥杆状态分析完成，共分析 {len(swing_phases)} 帧")
             except Exception as e:
                 print(f"❌ 挥杆状态分析失败: {e}")

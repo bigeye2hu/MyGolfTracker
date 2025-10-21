@@ -31,23 +31,24 @@ class UploadModule {
                         <h3 style="margin: 0 0 10px 0; color: #2c3e50; font-size: 16px;">🎯 分析分辨率选择</h3>
                         <p style="margin: 0 0 15px 0; color: #6c757d; font-size: 14px;">不同分辨率会影响检测精度和处理速度</p>
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px;">
-                            <label class="res-option" style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #e9ecef; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
+                            <label style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #e9ecef; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
                                 <input type="radio" name="resolution" value="320" style="margin-right: 8px;">
-                                <span>320×320</span>
+                                <span>320×320<br><small style="color: #6c757d;">快速 (80.2%)</small></span>
                             </label>
-                            <label class="res-option" style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #e9ecef; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
-                                <input type="radio" name="resolution" value="480" style="margin-right: 8px;">
-                                <span>480×480</span>
+                            <label style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #28a745; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
+                                <input type="radio" name="resolution" value="480" checked style="margin-right: 8px;">
+                                <span>480×480<br><small style="color: #28a745;">推荐 (80.9%)</small></span>
                             </label>
-                            <label class="res-option" style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #28a745; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
-                                <input type="radio" name="resolution" value="640" checked style="margin-right: 8px;">
-                                <span>640×640</span>
+                            <label style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #e9ecef; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
+                                <input type="radio" name="resolution" value="640" style="margin-right: 8px;">
+                                <span>640×640<br><small style="color: #6c757d;">标准 (77.9%)</small></span>
                             </label>
-                            <label class="res-option" style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #e9ecef; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
+                            <label style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #e9ecef; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
                                 <input type="radio" name="resolution" value="800" style="margin-right: 8px;">
-                                <span>800×800</span>
+                                <span>800×800<br><small style="color: #6c757d;">高精度 (77.9%)</small></span>
                             </label>
                         </div>
+                        <p style="margin: 10px 0 0 0; color: #6c757d; font-size: 12px;">括号内为测试检测率，480×480为当前推荐设置</p>
                     </div>
                     
                     <!-- 优化策略选择 -->
@@ -204,29 +205,6 @@ class UploadModule {
         } else {
             console.error('找不到文件输入元素!');
         }
-
-        // 分辨率单选交互：切换高亮边框
-        const resInputs = document.querySelectorAll('input[name="resolution"]');
-        if (resInputs && resInputs.length) {
-            resInputs.forEach(input => {
-                input.addEventListener('change', () => this.updateResolutionUI());
-            });
-            // 初始化一次UI状态
-            this.updateResolutionUI();
-        }
-    }
-
-    // 根据选中的分辨率更新外层label样式
-    updateResolutionUI() {
-        const labels = document.querySelectorAll('.res-option');
-        labels.forEach(label => {
-            const input = label.querySelector('input[name="resolution"]');
-            if (input && input.checked) {
-                label.style.border = '2px solid #28a745';
-            } else {
-                label.style.border = '2px solid #e9ecef';
-            }
-        });
     }
 
     async handleFileSelect(event) {

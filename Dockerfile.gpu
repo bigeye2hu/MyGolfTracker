@@ -1,0 +1,57 @@
+FROM nvidia/cuda:11.8-devel-ubuntu20.04
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive
+
+# 安装系统依赖
+RUN apt-get update && apt-get install -y \
+    python3.10 \
+    python3.10-dev \
+    python3-pip \
+    ffmpeg \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# 创建python3.10的软链接
+RUN ln -s /usr/bin/python3.10 /usr/bin/python3 && \
+    ln -s /usr/bin/python3.10 /usr/bin/python
+
+WORKDIR /app
+
+# 创建 wheels 目录
+RUN mkdir -p /wheels
+
+ARG TORCH_VERSION=2.1.0+cu118
+ARG TORCHVISION_VERSION=0.16.0+cu118
+COPY requirements.txt /app/requirements.txt
+
+# 安装GPU版本的torch和torchvision
+RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple \
+    --trusted-host mirrors.aliyun.com \
+    "torch==${TORCH_VERSION}" "torchvision==${TORCHVISION_VERSION}" \
+    --extra-index-url https://download.pytorch.org/whl/cu118 || \
+    pip install --no-cache-dir \
+    "torch==${TORCH_VERSION}" "torchvision==${TORCHVISION_VERSION}" \
+    --extra-index-url https://download.pytorch.org/whl/cu118
+
+# 安装其他依赖
+RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple \
+    --trusted-host mirrors.aliyun.com -r /app/requirements.txt || \
+    pip install --no-cache-dir -r /app/requirements.txt
+
+COPY app /app/app
+COPY analyzer /app/analyzer
+COPY detector /app/detector
+COPY static /app/static
+COPY data /app/data
+
+EXPOSE 5005
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5005", "--log-level", "debug", "--timeout-keep-alive", "300"]
+

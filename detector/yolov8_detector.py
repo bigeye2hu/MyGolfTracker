@@ -21,17 +21,26 @@ class YOLOv8Detector:
     def _ensure_model(self) -> None:
         if YOLOv8Detector._model is None:
             from ultralytics import YOLO  # Lazy import
+            import torch
 
-            # 始终在 CPU 上加载，避免无 GPU 环境导致的开销与不确定行为
             model = YOLO(self.model_path)
             try:
-                # 将模型固定在 CPU，关闭 half 精度
+                # 自动检测GPU可用性
+                if torch.cuda.is_available():
+                    print("🚀 检测到GPU，使用CUDA加速")
+                    model.to("cuda")
+                    if hasattr(model, "model") and hasattr(model.model, "half"):
+                        model.model.half = True  # 启用半精度推理
+                else:
+                    print("💻 未检测到GPU，使用CPU")
+                    model.to("cpu")
+                    if hasattr(model, "model") and hasattr(model.model, "half"):
+                        model.model.half = False
+            except Exception as e:
+                print(f"⚠️ 设备设置失败，回退到CPU: {e}")
                 model.to("cpu")
                 if hasattr(model, "model") and hasattr(model.model, "half"):
                     model.model.half = False
-            except Exception:
-                # 兼容不同版本的 ultralytics
-                pass
             YOLOv8Detector._model = model
 
     def detect_single_point(self, image_bgr: np.ndarray, debug: bool = False, imgsz: int = 480, conf: float = 0.01, iou: float = 0.7, max_det: int = 10) -> Optional[Tuple[float, float, float]]:
@@ -67,12 +76,15 @@ class YOLOv8Detector:
         ]:
             os.environ.setdefault(k, "4")  # 增加BLAS线程数
 
-        # 控制推理分辨率并固定在 CPU 上推理，减少 CPU 机器上的负载
-        # 使用动态分辨率以平衡检测精度和处理速度
+        # 自动选择设备进行推理
+        import torch
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        
+        # 控制推理分辨率，使用动态分辨率以平衡检测精度和处理速度
         results = YOLOv8Detector._model.predict(
             source=image_bgr,
             verbose=False,
-            device="cpu",
+            device=device,  # 自动选择设备
             imgsz=imgsz,  # 使用传入的分辨率参数
             conf=conf,  # 使用传入的置信度阈值
             iou=iou,  # 使用传入的IoU阈值

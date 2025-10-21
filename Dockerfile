@@ -15,26 +15,26 @@ deb https://mirrors.ustc.edu.cn/debian-security $VERSION_CODENAME-security main 
 
 WORKDIR /app
 
-# 先拷贝本地 wheels（若存在，用于离线安装大包如 torch）
-COPY wheels/ /wheels/ 2>/dev/null || mkdir -p /wheels
+# 创建 wheels 目录
+RUN mkdir -p /wheels
 
-ARG TORCH_VERSION=2.8.0
-ARG TORCHVISION_VERSION=0.19.0
+ARG TORCH_VERSION=2.1.0+cu118
+ARG TORCHVISION_VERSION=0.16.0+cu118
 COPY requirements.txt /app/requirements.txt
 # 使用国内 PyPI 镜像加速，失败则回退官方
 RUN set -ex; \
-    # 强制先用本地 wheel 安装 torch/torchvision，不成功则直接失败，避免后续又从网络拉取
-    pip install --no-cache-dir --no-index --find-links /wheels \
-        "torch==${TORCH_VERSION}" || (echo "Missing torch wheel in /wheels" && exit 1); \
-    if ls /wheels/torchvision*.whl >/dev/null 2>&1; then \
-        pip install --no-cache-dir --no-index --find-links /wheels \
-            "torchvision==${TORCHVISION_VERSION}"; \
-    fi; \
-    # 过滤掉 torch/torchvision/torchaudio，避免重复安装
-    grep -viE '^(torch|torchvision|torchaudio)([<>= ]|$)' /app/requirements.txt > /app/requirements-cpu.txt; \
-    (pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple \
-        --trusted-host mirrors.aliyun.com --find-links /wheels -r /app/requirements-cpu.txt \
-     || pip install --no-cache-dir --find-links /wheels -r /app/requirements-cpu.txt)
+    # 安装GPU版本的torch和torchvision
+    pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple \
+        --trusted-host mirrors.aliyun.com \
+        "torch==${TORCH_VERSION}" "torchvision==${TORCHVISION_VERSION}" \
+        --extra-index-url https://download.pytorch.org/whl/cu118 || \
+    pip install --no-cache-dir \
+        "torch==${TORCH_VERSION}" "torchvision==${TORCHVISION_VERSION}" \
+        --extra-index-url https://download.pytorch.org/whl/cu118; \
+    # 安装其他依赖
+    pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple \
+        --trusted-host mirrors.aliyun.com -r /app/requirements.txt || \
+    pip install --no-cache-dir -r /app/requirements.txt
 
 COPY app /app/app
 COPY analyzer /app/analyzer

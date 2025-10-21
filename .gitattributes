@@ -1,1 +1,8 @@
-*.pt filter=lfs diff=lfs merge=lfs -text
+# Git LFS配置
+# 大模型文件使用Git LFS管理
+# YOLOv8模型文件
+data/*.pt filter=lfs diff=lfs merge=lfs -text
+# 视频文件
+*.mp4 filter=lfs diff=lfs merge=lfs -text
+*.mov filter=lfs diff=lfs merge=lfs -text
+*.avi filter=lfs diff=lfs merge=lfs -text

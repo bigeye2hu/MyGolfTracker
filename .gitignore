@@ -4,110 +4,62 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# Virtual Environment
 venv/
-env/
 ENV/
-env.bak/
-venv.bak/
+env/
+*.egg-info/
+dist/
+build/
 
-# IDE
+# IDEs
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
-
-# OS
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
 
-# Logs
+# 日志文件
 *.log
-logs/
+golftracker.log
 
-# Temporary files
+# 临时文件
 *.tmp
 *.temp
-temp/
-tmp/
-
-# Model files (large files)
-*.pt
-*.pth
-*.onnx
-*.h5
-*.pb
-
-# Data files
 *.mp4
-*.avi
 *.mov
-*.mkv
-*.wmv
-*.flv
-*.webm
-*.tar.gz
-*.zip
-*.rar
+*.avi
+test_video.mp4
 
 # Docker
 .dockerignore
 
-# Environment variables
+# 部署包
+*.tar.gz
+MyGolfTracker_deployment.tar.gz
+golftracker_deploy.tar.gz
+golftracker_gpu_deploy.tar.gz
+
+# 环境变量
 .env
 .env.local
-.env.development.local
-.env.test.local
-.env.production.local
 
-# Test files
-test_*.py
-*_test.py
-debug_*.py
-compare_*.py
-simple_*.py
+# 缓存
+.pytest_cache/
+.coverage
+htmlcov/
 
-# Deployment files
-deploy_*.sh
-*.tar.gz
-*.zip
+# 操作系统
+Thumbs.db
+.DS_Store
 
 # Jupyter Notebook
 .ipynb_checkpoints
 
-# Coverage reports
-htmlcov/
-.coverage
-.coverage.*
-coverage.xml
-*.cover
-.hypothesis/
-.pytest_cache/
+# 大文件（Git LFS管理）
+# data/*.pt 文件由Git LFS管理
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
+# 训练数据临时文件
+static/training_data_*.html
+
+# SSH配置备份
+*.bak

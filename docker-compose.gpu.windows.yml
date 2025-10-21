@@ -1,0 +1,27 @@
+version: "3.9"
+services:
+  golftracker:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    container_name: golftracker-service-gpu
+    ports:
+      - "5005:5005"
+    environment:
+      - MODEL_PATH=data/best.pt
+      - SERVICE_PORT=5005
+      - CUDA_VISIBLE_DEVICES=0
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 4G
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+

@@ -61,6 +61,10 @@ async def analyze(
     file: UploadFile = File(...),
     handed: str = Form("right"),
 ) -> dict:
+    """
+    快速分析接口 - 同步返回结果
+    使用默认参数进行视频分析，适合简单应用和快速测试
+    """
     # 支持更多视频格式的 MIME 类型
     supported_types = {
         "video/mp4", "video/quicktime", "video/x-msvideo", "video/avi",
@@ -73,178 +77,29 @@ async def analyze(
         supported_extensions = [".mp4", ".mov", ".avi", ".quicktime"]
         if not any(filename.lower().endswith(ext) for ext in supported_extensions):
             raise HTTPException(status_code=400, detail=f"Unsupported file type: {file.content_type}")
-    
 
     # 保存到临时文件
     with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename or "video.mp4")[1]) as tmp:
         shutil.copyfileobj(file.file, tmp)
         tmp_path = tmp.name
 
-    detector = YOLOv8Detector()
-    pose_detector = PoseDetector()
-    trajectory_optimizer = TrajectoryOptimizer()
-    trajectory: List[List[float]] = []
-    poses: List[str] = []
-    landmarks_list: List[List[float]] = []
-    video_spec = {"width": 0, "height": 0, "fps": 30, "num_frames": 0}
-
     try:
-        # 获取视频信息
-        cap = cv2.VideoCapture(tmp_path)
-        video_spec["width"] = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        video_spec["height"] = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        video_spec["fps"] = int(cap.get(cv2.CAP_PROP_FPS))
-        cap.release()
-
-        # 检测杆头轨迹和人体姿态
-        frame_index = 0
-        for ok, frame_bgr in iter_video_frames(tmp_path, sample_stride=1, max_size=960):
-            if not ok:
-                break
-                
-            # 杆头检测
-            res = detector.detect_single_point(frame_bgr)
-            if res is not None:
-                cx, cy, conf = res
-                # 获取当前帧的实际尺寸（可能被缩放）
-                frame_h, frame_w = frame_bgr.shape[:2]
-                
-                # 计算缩放比例
-                scale_x = video_spec["width"] / frame_w
-                scale_y = video_spec["height"] / frame_h
-                
-                # 将检测坐标映射回原始视频坐标
-                orig_x = cx * scale_x
-                orig_y = cy * scale_y
-                
-                # 转换为归一化坐标 (0-1)
-                norm_x = orig_x / video_spec["width"]
-                norm_y = orig_y / video_spec["height"]
-                
-                # 确保坐标在有效范围内
-                norm_x = max(0.0, min(1.0, norm_x))
-                norm_y = max(0.0, min(1.0, norm_y))
-                
-                trajectory.append([norm_x, norm_y])
-            else:
-                trajectory.append([0.0, 0.0])  # 未检测到时使用 (0,0)
-            
-            # 姿态检测
-            pose_landmarks = pose_detector.detect_pose(frame_bgr)
-            if pose_landmarks:
-                pose = pose_detector.classify_golf_pose(pose_landmarks, handed)
-                poses.append(pose)
-                # 获取扁平化的关键点数据
-                landmarks = pose_detector.get_landmarks_flat(pose_landmarks)
-                landmarks_list.append(landmarks)
-            else:
-                poses.append("Unknown")
-                landmarks_list.append([])
-                
-            frame_index += 1
-        
-        video_spec["num_frames"] = frame_index
-
-        # 轨迹优化 - 使用策略管理库
-        trajectory_optimizer = TrajectoryOptimizer()
-        
-        # 标准优化
-        optimized_trajectory, quality_scores = trajectory_optimizer.optimize_trajectory(trajectory)
-        trajectory_stats = trajectory_optimizer.get_trajectory_statistics(optimized_trajectory)
-        
-        # 快速移动优化
-        fast_motion_trajectory, _ = trajectory_optimizer.optimize_with_strategy(trajectory, "fast_motion")
-        
-        # 获取所有可用策略信息
-        available_strategies = trajectory_optimizer.get_available_strategies()
-
-        # 分析挥杆相位
-        swing_analyzer = SwingAnalyzer(optimized_trajectory, video_spec, poses)
-        phases = swing_analyzer.analyze_swing_phases()
-        
+        # 直接调用视频分析服务的核心处理逻辑
+        result = await video_analysis_service.analyze_video_sync(
+            video_path=tmp_path,
+            resolution="480",
+            confidence="0.01", 
+            iou="0.7",
+            max_det="10",
+            optimization_strategy="auto_fill",
+            handed=handed
+        )
+        return result
     finally:
         try:
             os.remove(tmp_path)
         except OSError:
             pass
-
-    # 构建 golftrainer 兼容的响应格式
-    response = {
-        "golftrainer_analysis": {
-            "basic_info": {
-                "version": 1.0,
-                "num_frames": video_spec["num_frames"],
-                "video_spec": {
-                    "height": video_spec["height"],
-                    "width": video_spec["width"],
-                    "num_frames": video_spec["num_frames"],
-                    "fps": video_spec["fps"],
-                    "scale": 100,
-                    "rotate": ""
-                }
-            },
-            "mp_result": {
-                "landmarks": get_mp_landmark_names(),
-                "landmarks_count": len(get_mp_landmark_names())
-            },
-            "pose_result": {
-                "poses": poses,
-                "handed": "RightHanded" if handed.lower() == "right" else "LeftHanded",
-                "poses_count": len(poses)
-            },
-            "club_head_result": {
-                "trajectory_points": optimized_trajectory,  # 修正字段名以匹配Golftrainer格式
-                "valid_points_count": trajectory_stats.get("valid_points", len(optimized_trajectory)),
-                "total_points_count": trajectory_stats.get("total_points", len(optimized_trajectory))
-            },
-            "trajectory_analysis": {
-                "x_range": {
-                    "min": min([p[0] for p in optimized_trajectory if p[0] != 0], default=0.0),
-                    "max": max([p[0] for p in optimized_trajectory if p[0] != 0], default=0.0)
-                },
-                "y_range": {
-                    "min": min([p[1] for p in optimized_trajectory if p[1] != 0], default=0.0),
-                    "max": max([p[1] for p in optimized_trajectory if p[1] != 0], default=0.0)
-                },
-                "total_distance": calculate_trajectory_distance(optimized_trajectory),
-                "average_movement_per_frame": calculate_trajectory_distance(optimized_trajectory) / max(len(optimized_trajectory), 1)
-            },
-            "data_frames": {
-                "mp_data_frame": {
-                    "shape": [len(landmarks_list), len(get_mp_landmark_names()) * 4],  # x,y,visibility,presence
-                    "columns_count": len(get_mp_landmark_names()) * 4,
-                    "sample_data": landmarks_list[0][:10] if landmarks_list and landmarks_list[0] else []
-                },
-                "norm_data_frame": {
-                    "shape": [len(landmarks_list), len(get_mp_landmark_names()) * 2],  # x,y only
-                    "columns_count": len(get_mp_landmark_names()) * 2,
-                    "sample_data": [landmarks_list[0][i] for i in range(0, min(10, len(landmarks_list[0])), 2)] if landmarks_list and landmarks_list[0] else []
-                }
-            },
-            "sample_trajectory": {
-                "first_20_points": optimized_trajectory[:20]
-            }
-        }
-    }
-
-    # 生成结果ID并存储结果
-    result_id = str(uuid.uuid4())
-    _ANALYSIS_RESULTS[result_id] = {
-        "result": response,
-        "timestamp": time.time(),
-        "video_info": {
-            "filename": file.filename or "video.mp4",
-            "width": video_spec["width"],
-            "height": video_spec["height"],
-            "fps": video_spec["fps"],
-            "num_frames": video_spec["num_frames"]
-        }
-    }
-    
-    # 添加可视化URL到响应中
-    response["visualization_url"] = f"/analyze/visualize/{result_id}"
-    
-    return response
 
 
 
@@ -848,7 +703,8 @@ async def analyze_video_test(
     confidence: str = Form("0.01"),
     iou: str = Form("0.7"),
     max_det: str = Form("10"),
-    optimization_strategy: str = Form("auto_fill")
+    optimization_strategy: str = Form("auto_fill"),
+    handed: str = Form("right")
 ):
     """分析上传的视频文件，返回YOLOv8检测结果"""
     print(f"收到视频上传请求: {video.filename}, 类型: {video.content_type}, 大小: {video.size}")

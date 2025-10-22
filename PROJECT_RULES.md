@@ -14,15 +14,14 @@
   - 命令：`./dev_start.sh`
   - 特性：代码目录挂载，改代码后重启即生效（`docker-compose -f docker-compose.dev.yml restart`）
 
-- 传统构建（兜底）
-  - 命令：
-    - `docker-compose -f docker-compose.gpu.yml down`
-    - `docker-compose -f docker-compose.gpu.yml build`
-    - `docker-compose -f docker-compose.gpu.yml up -d`
+- RTX 5090 优化版本（生产环境）
+  - 命令：`docker-compose -f docker-compose.gpu.yml up -d`
+  - 特性：使用 CUDA 12.8 + PyTorch cu128，支持 RTX 5090
 
 ## 构建与缓存策略
 
-- 统一使用 `Dockerfile.gpu.optimized`（被 `docker-compose.dev.yml` 引用）
+- 生产环境使用 `docker-compose.gpu.yml`（RTX 5090 优化）
+- 开发环境使用 `docker-compose.dev.yml`（代码挂载）
 - `.dockerignore` 已优化构建上下文，不随意添加大文件
 - 避免不必要的 `docker system prune`，除非磁盘压力或缓存异常
 

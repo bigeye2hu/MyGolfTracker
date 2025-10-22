@@ -39,5 +39,5 @@ services:
         condition: service_healthy
     command: tunnel --no-autoupdate run
     environment:
-      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+      - TUNNEL_TOKEN=eyJhIjoiYjI3MWFkZDVhMTFmNzc1NDJiZTgzY2U3ZGIwMDgxYWQiLCJ0IjoiZDhmN2RlMzAtNDA1NS00M2ZlLTkxYTktOGI5YmZmMDBhZTljIiwicyI6Ik1ETTVZelJpWlRVdFpHTTBPUzAwTWpBNExUa3hOVGd0T1RRMk1tVXpOR0ZpT1RNeSJ9
     # 如需固定命令：command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}

@@ -77,6 +77,10 @@ WORKDIR /app
 # 使用 cu121 对应的官方索引，避免装到 CPU 版或 cu118 版
 RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
+# 尝试安装最新的 nightly 版本以获得 RTX 5090 支持
+RUN pip install --no-cache-dir --upgrade --pre torch torchvision torchaudio \
+    --index-url https://download.pytorch.org/whl/nightly/cu121 || echo "Nightly version not available, using stable version"
+
 # ===== 安装项目依赖 =====
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple \

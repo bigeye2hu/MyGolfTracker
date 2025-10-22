@@ -84,17 +84,54 @@ async def analyze(
         tmp_path = tmp.name
 
     try:
-        # 直接调用视频分析服务的核心处理逻辑
-        result = await video_analysis_service.analyze_video_sync(
+        # 使用异步分析，但等待结果
+        job_id = str(uuid.uuid4())
+        
+        # 初始化任务状态
+        _JOB_STORE[job_id] = {
+            "status": "queued", 
+            "progress": 0, 
+            "filename": file.filename,
+            "resolution": "480",
+            "confidence": "0.01", 
+            "iou": "0.7",
+            "max_det": "10",
+            "optimization_strategy": "auto_fill"
+        }
+        
+        # 启动分析任务
+        video_analysis_service.analyze_video_job(
+            job_id=job_id,
             video_path=tmp_path,
             resolution="480",
             confidence="0.01", 
             iou="0.7",
             max_det="10",
-            optimization_strategy="auto_fill",
-            handed=handed
+            optimization_strategy="auto_fill"
         )
-        return result
+        
+        # 等待分析完成（最多等待60秒）
+        max_wait_time = 60
+        start_time = time.time()
+        
+        while time.time() - start_time < max_wait_time:
+            job_status = _JOB_STORE.get(job_id, {})
+            status = job_status.get("status", "unknown")
+            
+            if status == "done":
+                result = job_status.get("result", {})
+                # 清理结果中的NaN和无穷大值
+                cleaned_result = clean_json_data(result)
+                return cleaned_result
+            elif status == "error":
+                error_msg = job_status.get("error", "分析失败")
+                raise HTTPException(status_code=500, detail=f"视频分析失败: {error_msg}")
+            
+            # 等待1秒后再次检查
+            time.sleep(1)
+        
+        # 超时
+        raise HTTPException(status_code=408, detail="视频分析超时，请稍后重试")
     finally:
         try:
             os.remove(tmp_path)

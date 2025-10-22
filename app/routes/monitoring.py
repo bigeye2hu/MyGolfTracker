@@ -5,11 +5,61 @@ import psutil
 import torch
 from datetime import datetime, timedelta
 import json
+import subprocess
+import os
 
 router = APIRouter()
 
 # 从工具模块导入 metrics_history
 from app.utils.metrics_store import get_metrics_history
+
+def get_gpu_info():
+    """获取 GPU 信息"""
+    gpu_info = {
+        "available": False,
+        "device_name": "N/A",
+        "memory_total": 0,
+        "memory_used": 0,
+        "memory_free": 0,
+        "utilization": 0,
+        "temperature": 0,
+        "power_usage": 0
+    }
+    
+    try:
+        # 检查 CUDA 是否可用
+        if torch.cuda.is_available():
+            gpu_info["available"] = True
+            gpu_info["device_name"] = torch.cuda.get_device_name(0)
+            
+            # 获取 GPU 内存信息
+            memory_total = torch.cuda.get_device_properties(0).total_memory
+            memory_allocated = torch.cuda.memory_allocated(0)
+            memory_cached = torch.cuda.memory_reserved(0)
+            
+            gpu_info["memory_total"] = memory_total / (1024**3)  # GB
+            gpu_info["memory_used"] = memory_allocated / (1024**3)  # GB
+            gpu_info["memory_free"] = (memory_total - memory_allocated) / (1024**3)  # GB
+            
+            # 尝试使用 nvidia-smi 获取更详细的信息
+            try:
+                result = subprocess.run(['nvidia-smi', '--query-gpu=utilization.gpu,temperature.gpu,power.draw', '--format=csv,noheader,nounits'], 
+                                      capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    lines = result.stdout.strip().split('\n')
+                    if lines and lines[0]:
+                        parts = lines[0].split(', ')
+                        if len(parts) >= 3:
+                            gpu_info["utilization"] = float(parts[0])
+                            gpu_info["temperature"] = float(parts[1])
+                            gpu_info["power_usage"] = float(parts[2])
+            except (subprocess.TimeoutExpired, FileNotFoundError, ValueError):
+                pass
+                
+    except Exception as e:
+        print(f"获取 GPU 信息失败: {e}")
+    
+    return gpu_info
 
 @router.get("/monitoring/dashboard")
 async def monitoring_dashboard():
@@ -60,6 +110,27 @@ async def monitoring_dashboard():
                         
                         <div class="metric-label">模型状态</div>
                         <div class="metric-value" id="model-status">检查中...</div>
+                    </div>
+                </div>
+                
+                <!-- GPU 详细信息卡片 -->
+                <div class="card">
+                    <h3>🎮 GPU 状态 (RTX 5090)</h3>
+                    <div id="gpu-details">
+                        <div class="metric-label">设备名称</div>
+                        <div class="metric-value" id="gpu-device">检查中...</div>
+                        
+                        <div class="metric-label">GPU 使用率</div>
+                        <div class="metric-value" id="gpu-utilization">0%</div>
+                        
+                        <div class="metric-label">显存使用</div>
+                        <div class="metric-value" id="gpu-memory">0GB / 0GB</div>
+                        
+                        <div class="metric-label">温度</div>
+                        <div class="metric-value" id="gpu-temperature">0°C</div>
+                        
+                        <div class="metric-label">功耗</div>
+                        <div class="metric-value" id="gpu-power">0W</div>
                     </div>
                 </div>
                 
@@ -114,6 +185,22 @@ async def monitoring_dashboard():
                     <h3>🎯 请求分布</h3>
                     <div class="chart-container">
                         <canvas id="requestChart"></canvas>
+                    </div>
+                </div>
+                
+                <!-- App 端点统计 -->
+                <div class="card">
+                    <h3>📱 App 端点统计</h3>
+                    <div id="appEndpointStats">
+                        <p>加载中...</p>
+                    </div>
+                </div>
+                
+                <!-- 端点性能详情 -->
+                <div class="card">
+                    <h3>📈 端点性能详情</h3>
+                    <div id="endpointDetails">
+                        <p>加载中...</p>
                     </div>
                 </div>
             </div>
@@ -226,7 +313,17 @@ async def monitoring_dashboard():
                 
                 document.getElementById('cpu-usage').textContent = data.cpu_usage + '%';
                 document.getElementById('memory-usage').textContent = data.memory_usage + '%';
-                document.getElementById('gpu-usage').textContent = data.gpu_usage + '%';
+                document.getElementById('gpu-usage').textContent = data.gpu_info?.utilization || 0 + '%';
+                
+                // 更新 GPU 详细信息
+                if (data.gpu_info) {
+                    document.getElementById('gpu-device').textContent = data.gpu_info.device_name || 'N/A';
+                    document.getElementById('gpu-utilization').textContent = data.gpu_info.utilization + '%';
+                    document.getElementById('gpu-memory').textContent = 
+                        `${data.gpu_info.memory_used.toFixed(1)}GB / ${data.gpu_info.memory_total.toFixed(1)}GB`;
+                    document.getElementById('gpu-temperature').textContent = data.gpu_info.temperature + '°C';
+                    document.getElementById('gpu-power').textContent = data.gpu_info.power_usage + 'W';
+                }
                 
                 document.getElementById('total-requests').textContent = data.total_requests;
                 document.getElementById('avg-response-time').textContent = data.avg_response_time + 'ms';
@@ -256,16 +353,117 @@ async def monitoring_dashboard():
                 ];
                 resourceChart.update();
                 
-                // 更新请求分布图表
+                // 更新请求分布图表 - 包含 App 主要端点
                 const requestData = [
+                    data.request_counts['/analyze/video'] || 0,
+                    data.request_counts['/analyze/analyze'] || 0,
+                    data.request_counts['/analyze/video/status'] || 0,
                     data.request_counts['/healthz'] || 0,
-                    data.request_counts['/metrics'] || 0,
-                    data.request_counts['/health'] || 0,
                     data.request_counts['/monitoring/api/status'] || 0
                 ];
                 console.log('请求分布数据:', requestData);
                 requestChart.data.datasets[0].data = requestData;
+                requestChart.data.labels = ['视频分析', '快速分析', '状态查询', '健康检查', '监控状态'];
                 requestChart.update();
+                
+                // 更新 App 端点统计
+                updateAppEndpointStats(data);
+            }
+            
+            // 更新 App 端点统计
+            function updateAppEndpointStats(data) {
+                if (!data.app_endpoint_stats) return;
+                
+                const statsContainer = document.getElementById('appEndpointStats');
+                let html = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">';
+                
+                // 按类别显示统计
+                const categories = {};
+                Object.entries(data.app_endpoint_stats).forEach(([endpoint, stats]) => {
+                    if (!categories[stats.category]) {
+                        categories[stats.category] = [];
+                    }
+                    categories[stats.category].push({endpoint, ...stats});
+                });
+                
+                Object.entries(categories).forEach(([category, endpoints]) => {
+                    const categoryNames = {
+                        'analysis': '📊 分析服务',
+                        'status': '📈 状态查询',
+                        'health': '❤️ 健康检查',
+                        'monitoring': '📱 监控服务',
+                        'conversion': '🔄 转换服务',
+                        'config': '⚙️ 配置服务'
+                    };
+                    
+                    html += `<div style="border: 1px solid #ddd; border-radius: 8px; padding: 10px; background: #f9f9f9;">`;
+                    html += `<h4 style="margin: 0 0 10px 0; color: #333;">${categoryNames[category] || category}</h4>`;
+                    
+                    endpoints.forEach(endpoint => {
+                        const statusColor = endpoint.error_rate > 10 ? '#f44336' : endpoint.error_rate > 5 ? '#ff9800' : '#4caf50';
+                        const lastRequest = endpoint.last_request ? 
+                            new Date(endpoint.last_request * 1000).toLocaleTimeString() : '无';
+                        
+                        html += `<div style="margin-bottom: 8px; padding: 5px; background: white; border-radius: 4px;">`;
+                        html += `<div style="font-weight: bold; color: #333;">${endpoint.name}</div>`;
+                        html += `<div style="font-size: 11px; color: #888; font-family: monospace; background: #f5f5f5; padding: 2px 4px; border-radius: 3px; margin: 2px 0;">${endpoint.endpoint}</div>`;
+                        html += `<div style="font-size: 12px; color: #666;">请求: ${endpoint.request_count} | 响应: ${endpoint.avg_response_time}ms</div>`;
+                        html += `<div style="font-size: 12px; color: ${statusColor};">错误率: ${endpoint.error_rate}% | 最后: ${lastRequest}</div>`;
+                        html += `</div>`;
+                    });
+                    
+                    html += `</div>`;
+                });
+                
+                html += '</div>';
+                statsContainer.innerHTML = html;
+                
+                // 更新端点性能详情
+                updateEndpointDetails(data);
+            }
+            
+            // 更新端点性能详情
+            function updateEndpointDetails(data) {
+                if (!data.app_endpoint_stats) return;
+                
+                const detailsContainer = document.getElementById('endpointDetails');
+                let html = '<div style="overflow-x: auto;">';
+                html += '<table style="width: 100%; border-collapse: collapse; font-size: 12px;">';
+                html += '<thead><tr style="background: #f5f5f5;">';
+                html += '<th style="padding: 8px; border: 1px solid #ddd;">端点</th>';
+                html += '<th style="padding: 8px; border: 1px solid #ddd;">类型</th>';
+                html += '<th style="padding: 8px; border: 1px solid #ddd;">请求数</th>';
+                html += '<th style="padding: 8px; border: 1px solid #ddd;">平均响应(ms)</th>';
+                html += '<th style="padding: 8px; border: 1px solid #ddd;">最小/最大(ms)</th>';
+                html += '<th style="padding: 8px; border: 1px solid #ddd;">错误数</th>';
+                html += '<th style="padding: 8px; border: 1px solid #ddd;">错误率</th>';
+                html += '<th style="padding: 8px; border: 1px solid #ddd;">状态码</th>';
+                html += '</tr></thead><tbody>';
+                
+                Object.entries(data.app_endpoint_stats).forEach(([endpoint, stats]) => {
+                    if (stats.request_count > 0) {
+                        const statusCodes = Object.entries(stats.status_codes)
+                            .map(([code, count]) => `${code}(${count})`)
+                            .join(', ');
+                        
+                        html += '<tr>';
+                        html += `<td style="padding: 8px; border: 1px solid #ddd;">
+                            <div style="font-weight: bold;">${stats.name}</div>
+                            <div style="font-size: 10px; color: #666; font-family: monospace; background: #f5f5f5; padding: 2px 4px; border-radius: 3px; margin-top: 2px;">${endpoint}</div>
+                        </td>`;
+                        html += `<td style="padding: 8px; border: 1px solid #ddd;">${stats.type}</td>`;
+                        html += `<td style="padding: 8px; border: 1px solid #ddd;">${stats.request_count}</td>`;
+                        html += `<td style="padding: 8px; border: 1px solid #ddd;">${stats.avg_response_time}</td>`;
+                        html += `<td style="padding: 8px; border: 1px solid #ddd;">${stats.min_response_time}/${stats.max_response_time}</td>`;
+                        html += `<td style="padding: 8px; border: 1px solid #ddd; color: ${stats.error_count > 0 ? '#f44336' : '#4caf50'};">${stats.error_count}</td>`;
+                        html += `<td style="padding: 8px; border: 1px solid #ddd; color: ${stats.error_rate > 10 ? '#f44336' : stats.error_rate > 5 ? '#ff9800' : '#4caf50'};">${stats.error_rate}%</td>`;
+                        html += `<td style="padding: 8px; border: 1px solid #ddd; font-size: 10px;">${statusCodes}</td>`;
+                        html += '</tr>';
+                    }
+                });
+                
+                html += '</tbody></table></div>';
+                detailsContainer.innerHTML = html;
             }
             
             // 页面加载完成后初始化
@@ -292,12 +490,7 @@ async def get_monitoring_status():
         memory_usage = memory.percent
         
         # 获取GPU信息
-        gpu_usage = 0
-        if torch.cuda.is_available():
-            try:
-                gpu_usage = torch.cuda.utilization(0) if hasattr(torch.cuda, 'utilization') else 0
-            except:
-                gpu_usage = 0
+        gpu_info = get_gpu_info()
         
         # 获取请求统计数据
         metrics_history = get_metrics_history()
@@ -315,6 +508,77 @@ async def get_monitoring_status():
             endpoint = req["endpoint"]
             request_counts[endpoint] = request_counts.get(endpoint, 0) + 1
         
+        # App 主要端点详细统计
+        app_endpoints = {
+            "/analyze/video": {"name": "视频分析(异步)", "type": "POST", "category": "analysis"},
+            "/analyze/analyze": {"name": "快速分析(同步)", "type": "POST", "category": "analysis"},
+            "/analyze/video/status": {"name": "分析状态查询", "type": "GET", "category": "status"},
+            "/healthz": {"name": "健康检查", "type": "GET", "category": "health"},
+            "/monitoring/api/status": {"name": "监控状态", "type": "GET", "category": "monitoring"},
+            "/convert/convert": {"name": "视频转换", "type": "POST", "category": "conversion"},
+            "/analyze/strategies": {"name": "策略查询", "type": "GET", "category": "config"}
+        }
+        
+        # 分析每个 App 端点的详细统计
+        app_endpoint_stats = {}
+        for endpoint, info in app_endpoints.items():
+            endpoint_requests = [req for req in recent_requests if req["endpoint"] == endpoint]
+            if endpoint_requests:
+                response_times = [req["response_time"] for req in endpoint_requests]
+                status_codes = [req["status_code"] for req in endpoint_requests]
+                errors = [req for req in endpoint_requests if req["status_code"] >= 400]
+                
+                app_endpoint_stats[endpoint] = {
+                    "name": info["name"],
+                    "type": info["type"],
+                    "category": info["category"],
+                    "request_count": len(endpoint_requests),
+                    "avg_response_time": round(sum(response_times) / len(response_times), 1),
+                    "min_response_time": round(min(response_times), 1),
+                    "max_response_time": round(max(response_times), 1),
+                    "error_count": len(errors),
+                    "error_rate": round((len(errors) / len(endpoint_requests)) * 100, 1),
+                    "status_codes": {str(code): status_codes.count(code) for code in set(status_codes)},
+                    "last_request": max([req["timestamp"] for req in endpoint_requests]) if endpoint_requests else None
+                }
+            else:
+                app_endpoint_stats[endpoint] = {
+                    "name": info["name"],
+                    "type": info["type"],
+                    "category": info["category"],
+                    "request_count": 0,
+                    "avg_response_time": 0,
+                    "min_response_time": 0,
+                    "max_response_time": 0,
+                    "error_count": 0,
+                    "error_rate": 0,
+                    "status_codes": {},
+                    "last_request": None
+                }
+        
+        # 按类别统计
+        category_stats = {}
+        for endpoint, stats in app_endpoint_stats.items():
+            category = stats["category"]
+            if category not in category_stats:
+                category_stats[category] = {
+                    "total_requests": 0,
+                    "total_errors": 0,
+                    "avg_response_time": 0,
+                    "endpoints": []
+                }
+            category_stats[category]["total_requests"] += stats["request_count"]
+            category_stats[category]["total_errors"] += stats["error_count"]
+            category_stats[category]["endpoints"].append(endpoint)
+        
+        # 计算类别平均响应时间
+        for category, stats in category_stats.items():
+            if stats["total_requests"] > 0:
+                total_time = sum(app_endpoint_stats[ep]["avg_response_time"] * app_endpoint_stats[ep]["request_count"] 
+                               for ep in stats["endpoints"] if app_endpoint_stats[ep]["request_count"] > 0)
+                stats["avg_response_time"] = round(total_time / stats["total_requests"], 1)
+                stats["error_rate"] = round((stats["total_errors"] / stats["total_requests"]) * 100, 1)
+        
         return {
             "timestamp": current_time,
             "service_status": "ok",
@@ -322,11 +586,13 @@ async def get_monitoring_status():
             "model_loaded": False,  # 这里应该检查实际的模型状态
             "cpu_usage": round(cpu_usage, 1),
             "memory_usage": round(memory_usage, 1),
-            "gpu_usage": round(gpu_usage, 1),
+            "gpu_info": gpu_info,
             "total_requests": total_requests,
             "avg_response_time": round(avg_response_time, 1),
             "error_rate": round(error_rate, 1),
-            "request_counts": request_counts
+            "request_counts": request_counts,
+            "app_endpoint_stats": app_endpoint_stats,
+            "category_stats": category_stats
         }
     except Exception as e:
         return {

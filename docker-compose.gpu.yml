@@ -11,6 +11,8 @@ services:
       - MODEL_PATH=data/best.pt
       - SERVICE_PORT=5005
       - CUDA_VISIBLE_DEVICES=0
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     deploy:
       resources:
         limits:
@@ -18,10 +20,6 @@ services:
         reservations:
           memory: 4G
     volumes:
-      - /data:/data:ro
+      - ./data:/data:ro
     restart: unless-stopped
     runtime: nvidia
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-

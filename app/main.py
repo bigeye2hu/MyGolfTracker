@@ -9,6 +9,7 @@ from .routes.health import router as health_router
 from .routes.analyze import router as analyze_router
 from .routes.convert import router as convert_router
 from .routes.monitoring import router as monitoring_router
+from .routes.welcome import router as welcome_router
 from .utils.metrics_store import add_request_metric
 from analyzer.config import MODEL_PATH
 
@@ -117,6 +118,7 @@ def create_app() -> FastAPI:
         
         return response
     
+    
     # 添加健康检查端点
     @app.get("/healthz")
     def healthz():
@@ -145,6 +147,7 @@ def create_app() -> FastAPI:
     except Exception as e:
         print(f"⚠️ Prometheus 监控设置失败: {e}")
     
+    app.include_router(welcome_router)
     app.include_router(health_router)
     app.include_router(analyze_router, prefix="/analyze")
     app.include_router(convert_router, prefix="/convert")

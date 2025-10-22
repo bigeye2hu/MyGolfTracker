@@ -23,3 +23,21 @@ services:
       - ./data:/data:ro
     restart: unless-stopped
     runtime: nvidia
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5005/healthz')"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: golftracker-cloudflared
+    restart: unless-stopped
+    depends_on:
+      golftracker:
+        condition: service_healthy
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    # 如需固定命令：command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}

@@ -1,0 +1,9 @@
+---
+description: build rules for docker
+alwaysApply: true
+
+// When building or rebuilding Docker images or containers, always refer to the instructions and workflows defined in PROJECT_RULES.md.
+// All Docker-related operations (build, rebuild, start, restart) must strictly follow the documented process and recommendations in PROJECT_RULES.md to ensure team consistency and adherence to caching, environments, and compose usage.
+
+--- 
+@PROJECT_RULES.md

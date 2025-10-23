@@ -29,26 +29,40 @@ class UploadModule {
                     <!-- 分辨率选择 -->
                     <div class="resolution-selector" style="margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 10px; border: 1px solid #e9ecef;">
                         <h3 style="margin: 0 0 10px 0; color: #2c3e50; font-size: 16px;">🎯 分析分辨率选择</h3>
-                        <p style="margin: 0 0 15px 0; color: #6c757d; font-size: 14px;">不同分辨率会影响检测精度和处理速度</p>
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px;">
-                            <label style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #e9ecef; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
-                                <input type="radio" name="resolution" value="320" style="margin-right: 8px;">
-                                <span>320×320<br><small style="color: #6c757d;">快速 (80.2%)</small></span>
-                            </label>
+                        <p style="margin: 0 0 15px 0; color: #6c757d; font-size: 14px;">系统会根据视频实际尺寸自动选择最佳分辨率，或手动指定</p>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px;">
                             <label style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #28a745; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
-                                <input type="radio" name="resolution" value="480" checked style="margin-right: 8px;">
-                                <span>480×480<br><small style="color: #28a745;">推荐 (80.9%)</small></span>
+                                <input type="radio" name="resolution" value="960" checked style="margin-right: 8px;">
+                                <span>960×960<br><small style="color: #28a745;">推荐 (默认)</small></span>
+                            </label>
+                            <label style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #e9ecef; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
+                                <input type="radio" name="resolution" value="auto" style="margin-right: 8px;">
+                                <span>自动<br><small style="color: #6c757d;">根据视频尺寸</small></span>
                             </label>
                             <label style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #e9ecef; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
                                 <input type="radio" name="resolution" value="640" style="margin-right: 8px;">
-                                <span>640×640<br><small style="color: #6c757d;">标准 (77.9%)</small></span>
+                                <span>640×640<br><small style="color: #6c757d;">中等精度</small></span>
                             </label>
                             <label style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #e9ecef; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
-                                <input type="radio" name="resolution" value="800" style="margin-right: 8px;">
-                                <span>800×800<br><small style="color: #6c757d;">高精度 (77.9%)</small></span>
+                                <input type="radio" name="resolution" value="480" style="margin-right: 8px;">
+                                <span>480×480<br><small style="color: #6c757d;">快速模式</small></span>
+                            </label>
+                            <label style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #e9ecef; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
+                                <input type="radio" name="resolution" value="1280" style="margin-right: 8px;">
+                                <span>1280×1280<br><small style="color: #6c757d;">高精度</small></span>
+                            </label>
+                            <label style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #e9ecef; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
+                                <input type="radio" name="resolution" value="1600" style="margin-right: 8px;">
+                                <span>1600×1600<br><small style="color: #6c757d;">超高精度</small></span>
+                            </label>
+                            <label style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #e9ecef; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
+                                <input type="radio" name="resolution" value="1920" style="margin-right: 8px;">
+                                <span>1920×1920<br><small style="color: #6c757d;">最高精度</small></span>
                             </label>
                         </div>
-                        <p style="margin: 10px 0 0 0; color: #6c757d; font-size: 12px;">括号内为测试检测率，480×480为当前推荐设置</p>
+                        <p style="margin: 10px 0 0 0; color: #6c757d; font-size: 12px;">
+                            <strong>默认960×960</strong>：平衡精度和速度的最佳选择 | <strong>自动模式</strong>：根据视频尺寸动态调整
+                        </p>
                     </div>
                     
                     <!-- 优化策略选择 -->
@@ -88,7 +102,7 @@ class UploadModule {
                                     <span>0.1</span>
                                 </div>
                                 <p style="margin: 5px 0 0 0; font-size: 12px; color: #6c757d;">
-                                    越低检测越多，但可能增加误检。推荐: 0.01
+                                    <strong>当前: 0.01 (1%)</strong> - 高敏感度，适合高尔夫杆头检测
                                 </p>
                             </div>
                             
@@ -103,7 +117,7 @@ class UploadModule {
                                     <span>0.9</span>
                                 </div>
                                 <p style="margin: 5px 0 0 0; font-size: 12px; color: #6c757d;">
-                                    控制重复检测框过滤。推荐: 0.7
+                                    <strong>当前: 0.7 (70%)</strong> - 标准去重阈值，平衡精度和召回率
                                 </p>
                             </div>
                             
@@ -118,7 +132,7 @@ class UploadModule {
                                     <span>50</span>
                                 </div>
                                 <p style="margin: 5px 0 0 0; font-size: 12px; color: #6c757d;">
-                                    每帧最大检测目标数。推荐: 10
+                                    <strong>当前: 10</strong> - 每帧最大检测目标数，适合高尔夫场景
                                 </p>
                             </div>
                         </div>
@@ -127,10 +141,10 @@ class UploadModule {
                         <div style="margin-top: 15px; padding: 10px; background: #e7f3ff; border-radius: 8px; border: 1px solid #b3d9ff;">
                             <h4 style="margin: 0 0 8px 0; color: #004085; font-size: 14px;">📖 参数说明</h4>
                             <ul style="margin: 0; padding-left: 20px; color: #004085; font-size: 12px; line-height: 1.4;">
-                                <li><strong>置信度阈值</strong>: 检测框的最小置信度，越低检测越多但可能误检</li>
-                                <li><strong>IoU阈值</strong>: 非极大值抑制阈值，用于过滤重叠的检测框</li>
-                                <li><strong>最大检测数量</strong>: 每帧最多保留的检测框数量</li>
-                                <li><strong>当前推荐设置</strong>: 置信度0.01 + IoU0.7 + 最大检测10个</li>
+                                <li><strong>置信度阈值 (0.01)</strong>: 高敏感度设置，确保不错过任何可能的杆头位置</li>
+                                <li><strong>IoU阈值 (0.7)</strong>: 标准去重设置，过滤70%以上重叠的检测框</li>
+                                <li><strong>最大检测数量 (10)</strong>: 每帧最多保留10个检测结果，适合高尔夫场景</li>
+                                <li><strong>动态分辨率</strong>: 系统根据视频实际尺寸自动选择最佳分析分辨率</li>
                             </ul>
                         </div>
                     </div>

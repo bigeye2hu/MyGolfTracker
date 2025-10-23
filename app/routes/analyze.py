@@ -92,7 +92,7 @@ async def analyze(
             "status": "queued", 
             "progress": 0, 
             "filename": file.filename,
-            "resolution": "auto",  # 使用动态分辨率
+            "resolution": "960",  # 使用960×960默认分辨率
             "confidence": "0.01", 
             "iou": "0.7",
             "max_det": "10",
@@ -103,7 +103,7 @@ async def analyze(
         video_analysis_service.analyze_video_job(
             job_id=job_id,
             video_path=tmp_path,
-            resolution="auto",  # 使用动态分辨率
+            resolution="960",  # 使用960×960默认分辨率
             confidence="0.01", 
             iou="0.7",
             max_det="10",
@@ -648,7 +648,7 @@ async def get_server_test_page():
             <h1>🏌️ GolfTracker 服务器端测试</h1>
             <p>上传高尔夫挥杆视频，测试YOLOv8检测和生成golftrainer兼容数据</p>
             <div style="margin-top:8px;padding:8px 12px;border:1px solid #ddd;border-radius:8px;background:#f8f9fa;display:inline-block;color:#333;">
-              <strong style="color:#2c3e50;">运行模式</strong>：CPU 增强 / 抽帧步长 <code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">1</code> / 长边≤<code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">960</code> / 推理分辨率 <code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">512</code>
+              <strong style="color:#2c3e50;">运行模式</strong>：RTX 5090 GPU / 动态分辨率 / 置信度 <code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">0.01</code> / IoU <code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">0.7</code> / 最大检测 <code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">10</code>
             </div>
             
             <!-- 视频转换服务入口 -->
@@ -718,7 +718,7 @@ async def get_server_test_page():
     </div>
 
     <!-- 模块化组件 -->
-            <script src="/static/js/upload-module.js?v=1.8"></script>
+            <script src="/static/js/upload-module.js?v=2.2"></script>
     <script src="/static/js/results-module.js?v=1.6"></script>
     <script src="/static/js/trajectory-module.js?v=1.7"></script>
     <script src="/static/js/video-player-module.js?v=2.2"></script>
@@ -736,7 +736,7 @@ async def get_server_test_page():
 @router.post("/video")
 async def analyze_video_test(
     video: UploadFile = File(...), 
-    resolution: str = Form("auto"),  # 默认使用动态分辨率
+    resolution: str = Form("960"),  # 默认使用960×960分辨率
     confidence: str = Form("0.01"),
     iou: str = Form("0.7"),
     max_det: str = Form("10"),

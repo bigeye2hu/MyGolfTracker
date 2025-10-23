@@ -1,19 +1,19 @@
 #!/bin/bash
-# 开发模式启动脚本
 
-echo "🔧 启动开发模式..."
+echo "🚀 启动开发服务器..."
 
-# 使用开发配置启动
-docker-compose -f docker-compose.dev.yml up -d
+# 激活虚拟环境
+source venv/bin/activate
 
-echo "✅ 开发模式启动完成！"
-echo "📊 监控仪表板: http://localhost:5005/monitoring/dashboard"
-echo "🔍 健康检查: http://localhost:5005/healthz"
+# 设置环境变量
+export CUDA_VISIBLE_DEVICES=0
+export MODEL_PATH=data/best.pt
+export SERVICE_PORT=5005
+
+# 启动开发服务器（支持热重载）
+echo "📡 启动 FastAPI 开发服务器..."
+echo "   修改代码后会自动重启"
+echo "   按 Ctrl+C 停止服务器"
 echo ""
-echo "💡 开发模式特点："
-echo "   - 代码目录已挂载，修改代码后重启容器即可"
-echo "   - 使用优化的 Dockerfile，构建更快"
-echo "   - 数据目录只读挂载，保护模型文件"
-echo ""
-echo "🔄 重启服务: docker-compose -f docker-compose.dev.yml restart"
-echo "🛑 停止服务: docker-compose -f docker-compose.dev.yml down"
+
+python -m uvicorn app.main:app --host 0.0.0.0 --port 5005 --reload --log-level debug

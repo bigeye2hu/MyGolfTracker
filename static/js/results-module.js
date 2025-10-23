@@ -64,6 +64,12 @@ class ResultsModule {
                 <div class="stat-item">
                     <strong>平均置信度:</strong> ${data.avg_confidence}
                 </div>
+                <div class="stat-item">
+                    <strong>分析分辨率:</strong> ${data.analysis_resolution || '960×960'}
+                </div>
+                <div class="stat-item">
+                    <strong>原始视频尺寸:</strong> ${data.video_width || '未知'}×${data.video_height || '未知'}
+                </div>
             </div>
         `;
         

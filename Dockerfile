@@ -1,41 +1,35 @@
-FROM python:3.10-slim
+FROM nvidia/cuda:12.1.1-devel-ubuntu22.04
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive
 
-# 写入国内 Debian 源（自动识别 $VERSION_CODENAME），并安装系统依赖
-RUN . /etc/os-release && echo "deb https://mirrors.ustc.edu.cn/debian/ $VERSION_CODENAME main contrib non-free non-free-firmware\n\
-deb https://mirrors.ustc.edu.cn/debian/ $VERSION_CODENAME-updates main contrib non-free non-free-firmware\n\
-deb https://mirrors.ustc.edu.cn/debian/ $VERSION_CODENAME-backports main contrib non-free non-free-firmware\n\
-deb https://mirrors.ustc.edu.cn/debian-security $VERSION_CODENAME-security main contrib non-free non-free-firmware" > /etc/apt/sources.list && \
-    rm -f /etc/apt/sources.list.d/* /etc/apt/sources.list.d/debian.sources 2>/dev/null || true && \
-    apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 update && \
-    apt-get install -y --no-install-recommends ffmpeg libgl1 && \
-    rm -rf /var/lib/apt/lists/*
+# 安装系统依赖（很少变化，放在前面）
+RUN apt-get update && apt-get install -y \
+    python3.10 python3.10-dev python3-pip \
+    ffmpeg libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 \
+ && rm -rf /var/lib/apt/lists/*
+
+# 创建python软链接
+RUN ln -sf /usr/bin/python3.10 /usr/bin/python3 && \
+    ln -sf /usr/bin/python3.10 /usr/bin/python && \
+    python -m pip install --upgrade pip setuptools wheel
 
 WORKDIR /app
 
-# 创建 wheels 目录
-RUN mkdir -p /wheels
+# ===== 安装 GPU 版 PyTorch (CUDA 12.8) =====
+# 直接安装支持RTX 5090的cu128版本（很少变化，放在前面）
+# 固定版本号确保一致性
+RUN pip install --no-cache-dir torch==2.9.0+cu128 torchvision==0.24.0+cu128 torchaudio==2.9.0+cu128 --index-url https://download.pytorch.org/whl/cu128
 
-ARG TORCH_VERSION=2.1.0+cu118
-ARG TORCHVISION_VERSION=0.16.0+cu118
+# ===== 安装项目依赖 =====
+# 先复制 requirements.txt（这样只有依赖变化时才重新安装）
 COPY requirements.txt /app/requirements.txt
-# 使用国内 PyPI 镜像加速，失败则回退官方
-RUN set -ex; \
-    # 安装GPU版本的torch和torchvision
-    pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple \
-        --trusted-host mirrors.aliyun.com \
-        "torch==${TORCH_VERSION}" "torchvision==${TORCHVISION_VERSION}" \
-        --extra-index-url https://download.pytorch.org/whl/cu118 || \
-    pip install --no-cache-dir \
-        "torch==${TORCH_VERSION}" "torchvision==${TORCHVISION_VERSION}" \
-        --extra-index-url https://download.pytorch.org/whl/cu118; \
-    # 安装其他依赖
-    pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple \
-        --trusted-host mirrors.aliyun.com -r /app/requirements.txt || \
+RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple \
+    --trusted-host mirrors.aliyun.com -r /app/requirements.txt || \
     pip install --no-cache-dir -r /app/requirements.txt
 
+# ===== 拷贝源码（经常变化，放在最后） =====
 COPY app /app/app
 COPY analyzer /app/analyzer
 COPY detector /app/detector

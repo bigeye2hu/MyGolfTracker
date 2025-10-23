@@ -12,6 +12,7 @@ router = APIRouter()
 
 # 从工具模块导入 metrics_history
 from app.utils.metrics_store import get_metrics_history
+from app.utils.metrics_persistence import metrics_persistence
 
 def get_gpu_info():
     """获取 GPU 信息"""
@@ -180,9 +181,25 @@ async def monitoring_dashboard():
                     </div>
                 </div>
                 
-                <!-- 请求分布图表 -->
+                <!-- GPU使用率时间曲线 -->
                 <div class="card">
-                    <h3>🎯 请求分布</h3>
+                    <h3>🎮 GPU使用率趋势</h3>
+                    <div class="chart-container">
+                        <canvas id="gpuUsageChart"></canvas>
+                    </div>
+                </div>
+                
+                <!-- 请求分布时间曲线 -->
+                <div class="card">
+                    <h3>📈 请求分布趋势 (每5秒增量)</h3>
+                    <div class="chart-container">
+                        <canvas id="requestTrendChart"></canvas>
+                    </div>
+                </div>
+                
+                <!-- 请求分布饼图 -->
+                <div class="card">
+                    <h3>🎯 请求分布（当前）</h3>
                     <div class="chart-container">
                         <canvas id="requestChart"></canvas>
                     </div>
@@ -207,7 +224,12 @@ async def monitoring_dashboard():
         </div>
 
         <script>
-            let responseTimeChart, resourceChart, requestChart;
+            let responseTimeChart, resourceChart, requestChart, gpuUsageChart, requestTrendChart;
+            
+            // 历史数据存储
+            let gpuUsageHistory = [];
+            let requestTrendHistory = [];
+            let lastRequestCounts = {}; // 存储上次的请求计数
             
             // 初始化图表
             function initCharts() {
@@ -251,17 +273,102 @@ async def monitoring_dashboard():
                     }
                 });
                 
-                // 请求分布图表
+                // 请求分布图表（饼图）
                 const requestCtx = document.getElementById('requestChart').getContext('2d');
                 requestChart = new Chart(requestCtx, {
-                    type: 'bar',
+                    type: 'doughnut',
                     data: {
-                        labels: ['/healthz', '/metrics', '/health', '/monitoring'],
+                        labels: ['视频分析', '快速分析', '状态查询', '健康检查', '监控状态'],
                         datasets: [{
-                            label: '请求次数',
-                            data: [0, 0, 0, 0],
-                            backgroundColor: ['#4CAF50', '#2196F3', '#FF9800', '#9C27B0']
+                            data: [0, 0, 0, 0, 0],
+                            backgroundColor: ['#4CAF50', '#2196F3', '#FF9800', '#9C27B0', '#E91E63']
                         }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                });
+                
+                // GPU使用率时间曲线
+                const gpuUsageCtx = document.getElementById('gpuUsageChart').getContext('2d');
+                gpuUsageChart = new Chart(gpuUsageCtx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'GPU使用率 (%)',
+                            data: [],
+                            borderColor: '#FF6B6B',
+                            backgroundColor: 'rgba(255, 107, 107, 0.1)',
+                            tension: 0.4,
+                            fill: true
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: { 
+                                beginAtZero: true,
+                                max: 100,
+                                ticks: {
+                                    callback: function(value) {
+                                        return value + '%';
+                                    }
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: true
+                            }
+                        }
+                    }
+                });
+                
+                // 请求分布时间曲线
+                const requestTrendCtx = document.getElementById('requestTrendChart').getContext('2d');
+                requestTrendChart = new Chart(requestTrendCtx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [
+                            {
+                                label: '视频分析 (增量)',
+                                data: [],
+                                borderColor: '#4CAF50',
+                                backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                                tension: 0.4
+                            },
+                            {
+                                label: '快速分析 (增量)',
+                                data: [],
+                                borderColor: '#2196F3',
+                                backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                                tension: 0.4
+                            },
+                            {
+                                label: '状态查询 (增量)',
+                                data: [],
+                                borderColor: '#FF9800',
+                                backgroundColor: 'rgba(255, 152, 0, 0.1)',
+                                tension: 0.4
+                            },
+                            {
+                                label: '健康检查 (增量)',
+                                data: [],
+                                borderColor: '#9C27B0',
+                                backgroundColor: 'rgba(156, 39, 176, 0.1)',
+                                tension: 0.4
+                            }
+                        ]
                     },
                     options: {
                         responsive: true,
@@ -334,8 +441,9 @@ async def monitoring_dashboard():
             function updateCharts(data) {
                 console.log('更新图表数据:', data);
                 
-                // 更新响应时间图表
                 const now = new Date().toLocaleTimeString();
+                
+                // 更新响应时间图表
                 responseTimeChart.data.labels.push(now);
                 responseTimeChart.data.datasets[0].data.push(data.avg_response_time);
                 
@@ -353,17 +461,65 @@ async def monitoring_dashboard():
                 ];
                 resourceChart.update();
                 
-                // 更新请求分布图表 - 包含 App 主要端点
+                // 更新GPU使用率时间曲线
+                gpuUsageChart.data.labels.push(now);
+                gpuUsageChart.data.datasets[0].data.push(data.gpu_info.utilization || 0);
+                
+                if (gpuUsageChart.data.labels.length > 20) {
+                    gpuUsageChart.data.labels.shift();
+                    gpuUsageChart.data.datasets[0].data.shift();
+                }
+                gpuUsageChart.update();
+                
+                // 更新请求分布时间曲线 - 计算增量
+                requestTrendChart.data.labels.push(now);
+                
+                // 计算各端点的请求增量
+                const currentVideoRequests = data.request_counts['/analyze/video'] || 0;
+                const currentAnalyzeRequests = data.request_counts['/analyze/analyze'] || 0;
+                const currentStatusRequests = data.request_counts['/analyze/video/status'] || 0;
+                const currentHealthRequests = data.request_counts['/healthz'] || 0;
+                
+                const lastVideoRequests = lastRequestCounts['/analyze/video'] || 0;
+                const lastAnalyzeRequests = lastRequestCounts['/analyze/analyze'] || 0;
+                const lastStatusRequests = lastRequestCounts['/analyze/video/status'] || 0;
+                const lastHealthRequests = lastRequestCounts['/healthz'] || 0;
+                
+                // 计算增量（每5秒的请求数）
+                const videoIncrement = Math.max(0, currentVideoRequests - lastVideoRequests);
+                const analyzeIncrement = Math.max(0, currentAnalyzeRequests - lastAnalyzeRequests);
+                const statusIncrement = Math.max(0, currentStatusRequests - lastStatusRequests);
+                const healthIncrement = Math.max(0, currentHealthRequests - lastHealthRequests);
+                
+                requestTrendChart.data.datasets[0].data.push(videoIncrement);
+                requestTrendChart.data.datasets[1].data.push(analyzeIncrement);
+                requestTrendChart.data.datasets[2].data.push(statusIncrement);
+                requestTrendChart.data.datasets[3].data.push(healthIncrement);
+                
+                // 更新上次的请求计数
+                lastRequestCounts['/analyze/video'] = currentVideoRequests;
+                lastRequestCounts['/analyze/analyze'] = currentAnalyzeRequests;
+                lastRequestCounts['/analyze/video/status'] = currentStatusRequests;
+                lastRequestCounts['/healthz'] = currentHealthRequests;
+                
+                if (requestTrendChart.data.labels.length > 20) {
+                    requestTrendChart.data.labels.shift();
+                    requestTrendChart.data.datasets.forEach(dataset => {
+                        dataset.data.shift();
+                    });
+                }
+                requestTrendChart.update();
+                
+                // 更新请求分布饼图 - 包含 App 主要端点
                 const requestData = [
-                    data.request_counts['/analyze/video'] || 0,
-                    data.request_counts['/analyze/analyze'] || 0,
-                    data.request_counts['/analyze/video/status'] || 0,
-                    data.request_counts['/healthz'] || 0,
+                    currentVideoRequests,
+                    currentAnalyzeRequests,
+                    currentStatusRequests,
+                    currentHealthRequests,
                     data.request_counts['/monitoring/api/status'] || 0
                 ];
                 console.log('请求分布数据:', requestData);
                 requestChart.data.datasets[0].data = requestData;
-                requestChart.data.labels = ['视频分析', '快速分析', '状态查询', '健康检查', '监控状态'];
                 requestChart.update();
                 
                 // 更新 App 端点统计
@@ -579,7 +735,8 @@ async def get_monitoring_status():
                 stats["avg_response_time"] = round(total_time / stats["total_requests"], 1)
                 stats["error_rate"] = round((stats["total_errors"] / stats["total_requests"]) * 100, 1)
         
-        return {
+        # 构建返回数据
+        status_data = {
             "timestamp": current_time,
             "service_status": "ok",
             "cuda_available": torch.cuda.is_available(),
@@ -594,11 +751,57 @@ async def get_monitoring_status():
             "app_endpoint_stats": app_endpoint_stats,
             "category_stats": category_stats
         }
+        
+        # 保存监控数据到持久化存储
+        try:
+            metrics_persistence.save_metrics(status_data)
+            # 每天清理一次旧数据（避免频繁清理）
+            import datetime
+            current_hour = datetime.datetime.now().hour
+            if current_hour == 0:  # 每天凌晨0点清理
+                metrics_persistence.cleanup_old_data()
+        except Exception as e:
+            # 数据保存失败不影响API响应
+            print(f"保存监控数据失败: {e}")
+        
+        return status_data
     except Exception as e:
         return {
             "error": str(e),
             "timestamp": time.time(),
             "service_status": "error"
+        }
+
+@router.get("/monitoring/api/history")
+async def get_historical_metrics(days: int = 7):
+    """获取历史监控数据"""
+    try:
+        historical_data = metrics_persistence.load_historical_metrics(days)
+        return {
+            "success": True,
+            "days": days,
+            "data_points": len(historical_data),
+            "data": historical_data
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+@router.get("/monitoring/api/summary")
+async def get_metrics_summary(days: int = 7):
+    """获取监控数据摘要"""
+    try:
+        summary = metrics_persistence.get_metrics_summary(days)
+        return {
+            "success": True,
+            "summary": summary
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
         }
 
 # 中间件功能将在主应用中实现

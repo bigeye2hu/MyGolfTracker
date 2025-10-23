@@ -103,9 +103,11 @@ class VideoAnalysisService:
                 # 用户指定的分辨率也要在合理范围内
                 dynamic_resolution = max(min_resolution, min(max_resolution, user_resolution))
             
-            print(f"视频原始尺寸: {video_width}×{video_height}")
-            print(f"动态分析分辨率: {dynamic_resolution}×{dynamic_resolution}")
-            print(f"使用分析参数: 分辨率={dynamic_resolution}×{dynamic_resolution}, 置信度={confidence_float}, IoU={iou_float}, 最大检测={max_det_int}")
+            print(f"🎯 视频分析参数:")
+            print(f"   原始视频尺寸: {video_width}×{video_height}")
+            print(f"   实际分析分辨率: {dynamic_resolution}×{dynamic_resolution}")
+            print(f"   检测参数: 置信度={confidence_float}, IoU={iou_float}, 最大检测={max_det_int}")
+            print(f"   优化策略: {optimization_strategy}")
             
             for ok, frame_bgr in iter_video_frames(video_path, sample_stride=1, max_size=dynamic_resolution):
                 if not ok:
@@ -333,6 +335,18 @@ class VideoAnalysisService:
                 # ===== 其他数据 =====
                 "frame_detections": frame_detections,  # 保持向后兼容
                 "swing_phases": [phase.value for phase in swing_phases],  # 挥杆状态序列
+                
+                # ===== 分析参数信息 =====
+                "analysis_resolution": f"{dynamic_resolution}×{dynamic_resolution}",
+                "video_width": video_width,
+                "video_height": video_height,
+                "analysis_params": {
+                    "resolution": dynamic_resolution,
+                    "confidence": confidence_float,
+                    "iou": iou_float,
+                    "max_det": max_det_int,
+                    "optimization_strategy": optimization_strategy
+                },
                 "video_info": {
                     "width": video_width,
                     "height": video_height,

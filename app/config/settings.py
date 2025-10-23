@@ -15,7 +15,7 @@ SERVER_CONFIG = {
 
 # 视频分析配置
 VIDEO_ANALYSIS_CONFIG = {
-    "default_resolution": "auto",  # 动态分辨率：根据视频实际尺寸调整
+    "default_resolution": "960",  # 默认分辨率：960×960，平衡精度和速度
     "default_confidence": "0.01",
     "default_iou": "0.7",
     "default_max_det": "10",

@@ -3,8 +3,8 @@ services:
   golftracker:
     build:
       context: .
-      dockerfile: Dockerfile.gpu
-    container_name: golftracker-service-gpu
+      dockerfile: Dockerfile
+    container_name: golftracker-service
     ports:
       - "5005:5005"
     environment:
@@ -40,4 +40,3 @@ services:
     command: tunnel --no-autoupdate run
     environment:
       - TUNNEL_TOKEN=eyJhIjoiYjI3MWFkZDVhMTFmNzc1NDJiZTgzY2U3ZGIwMDgxYWQiLCJ0IjoiZDhmN2RlMzAtNDA1NS00M2ZlLTkxYTktOGI5YmZmMDBhZTljIiwicyI6Ik1ETTVZelJpWlRVdFpHTTBPUzAwTWpBNExUa3hOVGd0T1RRMk1tVXpOR0ZpT1RNeSJ9
-    # 如需固定命令：command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}

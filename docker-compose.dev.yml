@@ -3,7 +3,7 @@ services:
   golftracker:
     build:
       context: .
-      dockerfile: Dockerfile.gpu.optimized
+      dockerfile: Dockerfile.gpu
     container_name: golftracker-service-dev
     ports:
       - "5005:5005"

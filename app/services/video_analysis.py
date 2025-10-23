@@ -83,17 +83,34 @@ class VideoAnalysisService:
                         cleaned.append([0.0, 0.0])
                 return cleaned
             
-            # 处理每一帧，使用用户选择的参数
-            resolution_int = int(resolution) if resolution.isdigit() else 480
+            # 动态分辨率处理：根据视频实际尺寸调整分析分辨率
             confidence_float = float(confidence) if confidence else 0.01
             iou_float = float(iou) if iou else 0.7
             max_det_int = int(max_det) if max_det.isdigit() else 10
             
-            print(f"使用分析参数: 分辨率={resolution_int}×{resolution_int}, 置信度={confidence_float}, IoU={iou_float}, 最大检测={max_det_int}")
-            for ok, frame_bgr in iter_video_frames(video_path, sample_stride=1, max_size=resolution_int):
+            # 计算动态分辨率：使用视频长边作为分析分辨率，但限制在合理范围内
+            video_long_edge = max(video_width, video_height)
+            # 从配置中获取分辨率限制
+            from app.config import VIDEO_ANALYSIS_CONFIG
+            min_resolution = VIDEO_ANALYSIS_CONFIG.get("resolution_limits", {}).get("min", 480)
+            max_resolution = VIDEO_ANALYSIS_CONFIG.get("resolution_limits", {}).get("max", 1920)
+            # 限制分辨率范围
+            dynamic_resolution = max(min_resolution, min(max_resolution, video_long_edge))
+            
+            # 如果用户指定了分辨率且不是"auto"，则使用用户指定的分辨率
+            if resolution and resolution != "auto" and resolution.isdigit():
+                user_resolution = int(resolution)
+                # 用户指定的分辨率也要在合理范围内
+                dynamic_resolution = max(min_resolution, min(max_resolution, user_resolution))
+            
+            print(f"视频原始尺寸: {video_width}×{video_height}")
+            print(f"动态分析分辨率: {dynamic_resolution}×{dynamic_resolution}")
+            print(f"使用分析参数: 分辨率={dynamic_resolution}×{dynamic_resolution}, 置信度={confidence_float}, IoU={iou_float}, 最大检测={max_det_int}")
+            
+            for ok, frame_bgr in iter_video_frames(video_path, sample_stride=1, max_size=dynamic_resolution):
                 if not ok:
                     break
-                res = detector.detect_single_point(frame_bgr, imgsz=resolution_int, conf=confidence_float, iou=iou_float, max_det=max_det_int)
+                res = detector.detect_single_point(frame_bgr, imgsz=dynamic_resolution, conf=confidence_float, iou=iou_float, max_det=max_det_int)
                 if res is not None:
                     cx, cy, conf = res
                     # 获取当前帧的实际尺寸（可能被缩放）

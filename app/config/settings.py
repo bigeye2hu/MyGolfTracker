@@ -15,14 +15,18 @@ SERVER_CONFIG = {
 
 # 视频分析配置
 VIDEO_ANALYSIS_CONFIG = {
-    "default_resolution": "480",
+    "default_resolution": "auto",  # 动态分辨率：根据视频实际尺寸调整
     "default_confidence": "0.01",
     "default_iou": "0.7",
     "default_max_det": "10",
     "default_optimization_strategy": "auto_fill",
     "supported_formats": ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm'],
     "max_file_size": 100 * 1024 * 1024,  # 100MB
-    "jpeg_quality": 90
+    "jpeg_quality": 90,
+    "resolution_limits": {
+        "min": 480,    # 最小分辨率
+        "max": 1920    # 最大分辨率
+    }
 }
 
 # 轨迹优化配置

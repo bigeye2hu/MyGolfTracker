@@ -92,7 +92,7 @@ async def analyze(
             "status": "queued", 
             "progress": 0, 
             "filename": file.filename,
-            "resolution": "480",
+            "resolution": "auto",  # 使用动态分辨率
             "confidence": "0.01", 
             "iou": "0.7",
             "max_det": "10",
@@ -103,7 +103,7 @@ async def analyze(
         video_analysis_service.analyze_video_job(
             job_id=job_id,
             video_path=tmp_path,
-            resolution="480",
+            resolution="auto",  # 使用动态分辨率
             confidence="0.01", 
             iou="0.7",
             max_det="10",
@@ -736,7 +736,7 @@ async def get_server_test_page():
 @router.post("/video")
 async def analyze_video_test(
     video: UploadFile = File(...), 
-    resolution: str = Form("480"),
+    resolution: str = Form("auto"),  # 默认使用动态分辨率
     confidence: str = Form("0.01"),
     iou: str = Form("0.7"),
     max_det: str = Form("10"),

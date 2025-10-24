@@ -648,7 +648,7 @@ async def get_server_test_page():
             <h1>🏌️ GolfTracker 服务器端测试</h1>
             <p>上传高尔夫挥杆视频，测试YOLOv8检测和生成golftrainer兼容数据</p>
             <div style="margin-top:8px;padding:8px 12px;border:1px solid #ddd;border-radius:8px;background:#f8f9fa;display:inline-block;color:#333;">
-              <strong style="color:#2c3e50;">运行模式</strong>：RTX 5090 GPU / 动态分辨率 / 置信度 <code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">0.01</code> / IoU <code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">0.7</code> / 最大检测 <code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">10</code>
+              <strong style="color:#2c3e50;">运行模式</strong>：RTX 5090 GPU / 高精度分辨率 <code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">1920×1920</code> / 置信度 <code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">0.2</code> / IoU <code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">0.9</code> / 最大检测 <code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">10</code>
             </div>
             
             <!-- 视频转换服务入口 -->
@@ -706,9 +706,52 @@ async def get_server_test_page():
                     </div>
                 </div>
             </div>
+            
+            <!-- 模型管理入口 -->
+            <div style="margin-top: 15px; padding: 16px 20px; border: 2px solid #ff6b6b; border-radius: 10px; background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 15px;">
+                    <div style="flex: 1; min-width: 300px;">
+                        <h3 style="margin: 0 0 8px 0; color: #2c3e50; font-size: 16px; font-weight: 600;">
+                            🤖 AI模型管理
+                        </h3>
+                        <p style="margin: 0; color: #495057; font-size: 14px; line-height: 1.5;">
+                            管理和切换不同的AI检测模型，包括新训练的高精度模型和备份模型
+                        </p>
+                    </div>
+                    <div style="flex-shrink: 0; display: flex; gap: 10px;">
+                        <button onclick="showModelSelector()" 
+                           style="display: inline-block; padding: 10px 20px; background: linear-gradient(135deg, #ff6b6b, #ee5a24); 
+                                  color: white; text-decoration: none; border-radius: 20px; font-weight: 600; 
+                                  transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3); border: none; cursor: pointer;"
+                           onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(255, 107, 107, 0.4)'"
+                           onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(255, 107, 107, 0.3)'">
+                            🎯 选择模型
+                        </button>
+                        <a href="/models/list" target="_blank" 
+                           style="display: inline-block; padding: 10px 20px; background: linear-gradient(135deg, #6c757d, #495057); 
+                                  color: white; text-decoration: none; border-radius: 20px; font-weight: 600; 
+                                  transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(108, 117, 125, 0.3);"
+                           onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(108, 117, 125, 0.4)'"
+                           onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(108, 117, 125, 0.3)'">
+                            📊 模型列表
+                        </a>
+                    </div>
+                </div>
+            </div>
         </div>
         
         <div class="content">
+            <!-- 模型选择器 -->
+            <div id="modelSelector" style="display: none; margin-bottom: 30px; padding: 20px; background: #f8f9fa; border-radius: 10px; border: 2px solid #ff6b6b;">
+                <h3 style="margin-top: 0; color: #2c3e50;">🤖 选择AI检测模型</h3>
+                <div id="modelList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; margin-top: 15px;">
+                    <!-- 模型列表将在这里动态加载 -->
+                </div>
+                <div style="margin-top: 15px; text-align: center;">
+                    <button onclick="hideModelSelector()" style="padding: 8px 16px; background: #6c757d; color: white; border: none; border-radius: 5px; cursor: pointer;">关闭</button>
+                </div>
+            </div>
+            
             <!-- 上传视频板块 -->
             <div id="uploadSection"></div>
             
@@ -717,8 +760,133 @@ async def get_server_test_page():
         </div>
     </div>
 
+    <!-- 模型管理JavaScript -->
+    <script>
+        let currentModel = null;
+        let availableModels = [];
+        
+        // 显示模型选择器
+        function showModelSelector() {
+            document.getElementById('modelSelector').style.display = 'block';
+            loadModelList();
+        }
+        
+        // 隐藏模型选择器
+        function hideModelSelector() {
+            document.getElementById('modelSelector').style.display = 'none';
+        }
+        
+        // 加载模型列表
+        async function loadModelList() {
+            try {
+                const response = await fetch('/models/list');
+                const data = await response.json();
+                
+                if (data.success) {
+                    availableModels = data.models;
+                    renderModelList(data.models);
+                } else {
+                    console.error('加载模型列表失败:', data.error);
+                }
+            } catch (error) {
+                console.error('加载模型列表失败:', error);
+            }
+        }
+        
+        // 渲染模型列表
+        function renderModelList(models) {
+            const modelList = document.getElementById('modelList');
+            modelList.innerHTML = '';
+            
+            models.forEach(model => {
+                const modelCard = document.createElement('div');
+                modelCard.style.cssText = `
+                    background: white;
+                    border: 2px solid #e9ecef;
+                    border-radius: 10px;
+                    padding: 20px;
+                    cursor: pointer;
+                    transition: all 0.3s ease;
+                    position: relative;
+                `;
+                
+                modelCard.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+                        <h4 style="margin: 0; color: #2c3e50; font-size: 16px;">${model.name}</h4>
+                        <span style="background: ${model.type === 'project' ? '#28a745' : '#ffc107'}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px;">
+                            ${model.type === 'project' ? '项目' : '训练'}
+                        </span>
+                    </div>
+                    <p style="margin: 5px 0; color: #6c757d; font-size: 14px;">${model.description}</p>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px;">
+                        <span style="color: #495057; font-size: 14px;">大小: ${model.size_mb}MB</span>
+                        <button onclick="selectModel('${model.name}')" 
+                                style="background: #007bff; color: white; border: none; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-size: 12px;">
+                            选择
+                        </button>
+                    </div>
+                `;
+                
+                modelCard.onmouseover = function() {
+                    this.style.borderColor = '#007bff';
+                    this.style.transform = 'translateY(-2px)';
+                    this.style.boxShadow = '0 4px 15px rgba(0,123,255,0.2)';
+                };
+                
+                modelCard.onmouseout = function() {
+                    this.style.borderColor = '#e9ecef';
+                    this.style.transform = 'translateY(0)';
+                    this.style.boxShadow = 'none';
+                };
+                
+                modelList.appendChild(modelCard);
+            });
+        }
+        
+        // 选择模型
+        async function selectModel(modelName) {
+            try {
+                const response = await fetch(`/models/switch?model_name=${encodeURIComponent(modelName)}`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(`模型已切换到: ${modelName}\\n注意: 需要重启服务以加载新模型`);
+                    currentModel = modelName;
+                    hideModelSelector();
+                } else {
+                    alert('切换模型失败: ' + data.error);
+                }
+            } catch (error) {
+                console.error('切换模型失败:', error);
+                alert('切换模型失败: ' + error.message);
+            }
+        }
+        
+        // 获取当前模型信息
+        async function loadCurrentModel() {
+            try {
+                const response = await fetch('/models/current');
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentModel = data.current_model.name;
+                    console.log('当前模型:', currentModel);
+                }
+            } catch (error) {
+                console.error('获取当前模型失败:', error);
+            }
+        }
+        
+        // 页面加载时获取当前模型
+        document.addEventListener('DOMContentLoaded', function() {
+            loadCurrentModel();
+        });
+    </script>
+
     <!-- 模块化组件 -->
-            <script src="/static/js/upload-module.js?v=2.2"></script>
+            <script src="/static/js/upload-module.js?v=2.3"></script>
     <script src="/static/js/results-module.js?v=1.6"></script>
     <script src="/static/js/trajectory-module.js?v=1.7"></script>
     <script src="/static/js/video-player-module.js?v=2.2"></script>

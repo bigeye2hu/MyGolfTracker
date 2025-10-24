@@ -653,14 +653,17 @@ async def get_monitoring_status():
         current_time = time.time()
         recent_requests = [req for req in metrics_history["requests"] if current_time - req["timestamp"] < 300]  # 最近5分钟
         
-        total_requests = len(recent_requests)
-        avg_response_time = sum(req["response_time"] for req in recent_requests) / max(total_requests, 1)
-        error_count = sum(1 for req in recent_requests if req["status_code"] >= 400)
+        # 排除监控状态请求，避免影响其他端点的可见性
+        filtered_requests = [req for req in recent_requests if req["endpoint"] != "/monitoring/api/status"]
+        
+        total_requests = len(filtered_requests)
+        avg_response_time = sum(req["response_time"] for req in filtered_requests) / max(total_requests, 1)
+        error_count = sum(1 for req in filtered_requests if req["status_code"] >= 400)
         error_rate = (error_count / max(total_requests, 1)) * 100
         
-        # 请求分布统计
+        # 请求分布统计（排除监控状态）
         request_counts = {}
-        for req in recent_requests:
+        for req in filtered_requests:
             endpoint = req["endpoint"]
             request_counts[endpoint] = request_counts.get(endpoint, 0) + 1
         
@@ -675,10 +678,12 @@ async def get_monitoring_status():
             "/analyze/strategies": {"name": "策略查询", "type": "GET", "category": "config"}
         }
         
-        # 分析每个 App 端点的详细统计
+        # 分析每个 App 端点的详细统计（排除监控状态）
         app_endpoint_stats = {}
         for endpoint, info in app_endpoints.items():
-            endpoint_requests = [req for req in recent_requests if req["endpoint"] == endpoint]
+            if endpoint == "/monitoring/api/status":
+                continue  # 跳过监控状态端点
+            endpoint_requests = [req for req in filtered_requests if req["endpoint"] == endpoint]
             if endpoint_requests:
                 response_times = [req["response_time"] for req in endpoint_requests]
                 status_codes = [req["status_code"] for req in endpoint_requests]
@@ -712,10 +717,12 @@ async def get_monitoring_status():
                     "last_request": None
                 }
         
-        # 按类别统计
+        # 按类别统计（排除监控类别）
         category_stats = {}
         for endpoint, stats in app_endpoint_stats.items():
             category = stats["category"]
+            if category == "monitoring":  # 跳过监控类别
+                continue
             if category not in category_stats:
                 category_stats[category] = {
                     "total_requests": 0,

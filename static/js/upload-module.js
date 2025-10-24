@@ -31,9 +31,9 @@ class UploadModule {
                         <h3 style="margin: 0 0 10px 0; color: #2c3e50; font-size: 16px;">🎯 分析分辨率选择</h3>
                         <p style="margin: 0 0 15px 0; color: #6c757d; font-size: 14px;">系统会根据视频实际尺寸自动选择最佳分辨率，或手动指定</p>
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px;">
-                            <label style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #28a745; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
-                                <input type="radio" name="resolution" value="960" checked style="margin-right: 8px;">
-                                <span>960×960<br><small style="color: #28a745;">推荐 (默认)</small></span>
+                            <label style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #e9ecef; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
+                                <input type="radio" name="resolution" value="960" style="margin-right: 8px;">
+                                <span>960×960<br><small style="color: #6c757d;">平衡模式</small></span>
                             </label>
                             <label style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #e9ecef; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
                                 <input type="radio" name="resolution" value="auto" style="margin-right: 8px;">
@@ -55,13 +55,13 @@ class UploadModule {
                                 <input type="radio" name="resolution" value="1600" style="margin-right: 8px;">
                                 <span>1600×1600<br><small style="color: #6c757d;">超高精度</small></span>
                             </label>
-                            <label style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #e9ecef; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
-                                <input type="radio" name="resolution" value="1920" style="margin-right: 8px;">
-                                <span>1920×1920<br><small style="color: #6c757d;">最高精度</small></span>
+                            <label style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #28a745; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
+                                <input type="radio" name="resolution" value="1920" checked style="margin-right: 8px;">
+                                <span>1920×1920<br><small style="color: #28a745;">最高精度 (默认)</small></span>
                             </label>
                         </div>
                         <p style="margin: 10px 0 0 0; color: #6c757d; font-size: 12px;">
-                            <strong>默认960×960</strong>：平衡精度和速度的最佳选择 | <strong>自动模式</strong>：根据视频尺寸动态调整
+                            <strong>默认1920×1920</strong>：最高精度检测模式 | <strong>自动模式</strong>：根据视频尺寸动态调整
                         </p>
                     </div>
                     
@@ -94,30 +94,30 @@ class UploadModule {
                             <!-- 置信度阈值 -->
                             <div class="param-group">
                                 <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #856404;">置信度阈值 (Confidence)</label>
-                                <input type="range" id="confidenceSlider" min="0.001" max="0.1" step="0.001" value="0.01" 
+                                <input type="range" id="confidenceSlider" min="0.001" max="0.1" step="0.001" value="0.2" 
                                        style="width: 100%; margin-bottom: 5px;">
                                 <div style="display: flex; justify-content: space-between; font-size: 12px; color: #856404;">
                                     <span>0.001</span>
-                                    <span id="confidenceValue">0.01</span>
+                                    <span id="confidenceValue">0.2</span>
                                     <span>0.1</span>
                                 </div>
                                 <p style="margin: 5px 0 0 0; font-size: 12px; color: #6c757d;">
-                                    <strong>当前: 0.01 (1%)</strong> - 高敏感度，适合高尔夫杆头检测
+                                    <strong>当前: 0.2 (20%)</strong> - 高精度设置，减少误检
                                 </p>
                             </div>
                             
                             <!-- IoU阈值 -->
                             <div class="param-group">
                                 <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #856404;">IoU阈值 (NMS)</label>
-                                <input type="range" id="iouSlider" min="0.1" max="0.9" step="0.1" value="0.7" 
+                                <input type="range" id="iouSlider" min="0.1" max="0.9" step="0.1" value="0.9" 
                                        style="width: 100%; margin-bottom: 5px;">
                                 <div style="display: flex; justify-content: space-between; font-size: 12px; color: #856404;">
                                     <span>0.1</span>
-                                    <span id="iouValue">0.7</span>
+                                    <span id="iouValue">0.9</span>
                                     <span>0.9</span>
                                 </div>
                                 <p style="margin: 5px 0 0 0; font-size: 12px; color: #6c757d;">
-                                    <strong>当前: 0.7 (70%)</strong> - 标准去重阈值，平衡精度和召回率
+                                    <strong>当前: 0.9 (90%)</strong> - 严格去重阈值，高精度检测
                                 </p>
                             </div>
                             
@@ -141,8 +141,8 @@ class UploadModule {
                         <div style="margin-top: 15px; padding: 10px; background: #e7f3ff; border-radius: 8px; border: 1px solid #b3d9ff;">
                             <h4 style="margin: 0 0 8px 0; color: #004085; font-size: 14px;">📖 参数说明</h4>
                             <ul style="margin: 0; padding-left: 20px; color: #004085; font-size: 12px; line-height: 1.4;">
-                                <li><strong>置信度阈值 (0.01)</strong>: 高敏感度设置，确保不错过任何可能的杆头位置</li>
-                                <li><strong>IoU阈值 (0.7)</strong>: 标准去重设置，过滤70%以上重叠的检测框</li>
+                                <li><strong>置信度阈值 (0.2)</strong>: 高精度设置，减少误检，提高检测质量</li>
+                                <li><strong>IoU阈值 (0.9)</strong>: 严格去重设置，过滤90%以上重叠的检测框</li>
                                 <li><strong>最大检测数量 (10)</strong>: 每帧最多保留10个检测结果，适合高尔夫场景</li>
                                 <li><strong>动态分辨率</strong>: 系统根据视频实际尺寸自动选择最佳分析分辨率</li>
                             </ul>

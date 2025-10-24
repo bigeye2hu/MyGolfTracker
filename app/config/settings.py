@@ -15,9 +15,9 @@ SERVER_CONFIG = {
 
 # 视频分析配置
 VIDEO_ANALYSIS_CONFIG = {
-    "default_resolution": "960",  # 默认分辨率：960×960，平衡精度和速度
-    "default_confidence": "0.01",
-    "default_iou": "0.7",
+    "default_resolution": "1920",  # 默认分辨率：1920×1920，高精度检测
+    "default_confidence": "0.2",
+    "default_iou": "0.9",
     "default_max_det": "10",
     "default_optimization_strategy": "auto_fill",
     "supported_formats": ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm'],

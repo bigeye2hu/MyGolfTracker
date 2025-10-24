@@ -10,6 +10,7 @@ from .routes.analyze import router as analyze_router
 from .routes.convert import router as convert_router
 from .routes.monitoring import router as monitoring_router
 from .routes.welcome import router as welcome_router
+from .routes.model_manager import router as model_manager_router
 from .utils.metrics_store import add_request_metric
 from analyzer.config import MODEL_PATH
 
@@ -152,6 +153,7 @@ def create_app() -> FastAPI:
     app.include_router(analyze_router, prefix="/analyze")
     app.include_router(convert_router, prefix="/convert")
     app.include_router(monitoring_router)
+    app.include_router(model_manager_router, prefix="/models")
     
     # 挂载静态文件目录
     app.mount("/static", StaticFiles(directory="static"), name="static")

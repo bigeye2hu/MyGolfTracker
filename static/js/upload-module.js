@@ -28,12 +28,14 @@ class UploadModule {
                     
                     <!-- 分辨率选择 -->
                     <div class="resolution-selector" style="margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 10px; border: 1px solid #e9ecef;">
-                        <h3 style="margin: 0 0 10px 0; color: #2c3e50; font-size: 16px;">🎯 分析分辨率选择</h3>
-                        <p style="margin: 0 0 15px 0; color: #6c757d; font-size: 14px;">系统会根据视频实际尺寸自动选择最佳分辨率，或手动指定</p>
+                        <h3 style="margin: 0 0 10px 0; color: #2c3e50; font-size: 16px;">🎯 分析分辨率选择 (长边)</h3>
+                        <p style="margin: 0 0 15px 0; color: #6c757d; font-size: 14px;">
+                            选择视频长边分辨率，系统将<strong style="color:#28a745;">自动保持原视频宽高比</strong>进行检测
+                        </p>
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px;">
                             <label style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #e9ecef; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
                                 <input type="radio" name="resolution" value="960" style="margin-right: 8px;">
-                                <span>960×960<br><small style="color: #6c757d;">平衡模式</small></span>
+                                <span>960<br><small style="color: #6c757d;">平衡模式</small></span>
                             </label>
                             <label style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #e9ecef; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
                                 <input type="radio" name="resolution" value="auto" style="margin-right: 8px;">
@@ -41,27 +43,27 @@ class UploadModule {
                             </label>
                             <label style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #e9ecef; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
                                 <input type="radio" name="resolution" value="640" style="margin-right: 8px;">
-                                <span>640×640<br><small style="color: #6c757d;">中等精度</small></span>
+                                <span>640<br><small style="color: #6c757d;">中等精度</small></span>
                             </label>
                             <label style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #e9ecef; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
                                 <input type="radio" name="resolution" value="480" style="margin-right: 8px;">
-                                <span>480×480<br><small style="color: #6c757d;">快速模式</small></span>
+                                <span>480<br><small style="color: #6c757d;">快速模式</small></span>
                             </label>
                             <label style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #e9ecef; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
                                 <input type="radio" name="resolution" value="1280" style="margin-right: 8px;">
-                                <span>1280×1280<br><small style="color: #6c757d;">高精度</small></span>
+                                <span>1280<br><small style="color: #6c757d;">高精度</small></span>
                             </label>
                             <label style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #e9ecef; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
                                 <input type="radio" name="resolution" value="1600" style="margin-right: 8px;">
-                                <span>1600×1600<br><small style="color: #6c757d;">超高精度</small></span>
+                                <span>1600<br><small style="color: #6c757d;">超高精度</small></span>
                             </label>
                             <label style="display: flex; align-items: center; padding: 8px 12px; background: white; border: 2px solid #28a745; border-radius: 8px; cursor: pointer; transition: all 0.3s ease;">
                                 <input type="radio" name="resolution" value="1920" checked style="margin-right: 8px;">
-                                <span>1920×1920<br><small style="color: #28a745;">最高精度 (默认)</small></span>
+                                <span>1920<br><small style="color: #28a745;">最高精度 (默认)</small></span>
                             </label>
                         </div>
                         <p style="margin: 10px 0 0 0; color: #6c757d; font-size: 12px;">
-                            <strong>默认1920×1920</strong>：最高精度检测模式 | <strong>自动模式</strong>：根据视频尺寸动态调整
+                            💡 <strong style="color:#28a745;">新特性</strong>：数字表示长边分辨率，系统自动保持视频宽高比（例如：1080×1620视频在1920模式下分析为1280×1920）
                         </p>
                     </div>
                     

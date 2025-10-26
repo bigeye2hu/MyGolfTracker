@@ -18,14 +18,15 @@ RUN ln -sf /usr/bin/python3.10 /usr/bin/python3 && \
 WORKDIR /app
 
 # ===== 安装 GPU 版 PyTorch (CUDA 12.8) =====
-# 直接安装支持RTX 5090的cu128版本（很少变化，放在前面）
-# 固定版本号确保一致性
-RUN pip install --no-cache-dir torch==2.9.0+cu128 torchvision==0.24.0+cu128 torchaudio==2.9.0+cu128 --index-url https://download.pytorch.org/whl/cu128
+# 安装预发布版本以支持RTX 5090
+RUN pip install --no-cache-dir --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128
 
 # ===== 安装项目依赖 =====
 # 先复制 requirements.txt（这样只有依赖变化时才重新安装）
 COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple \
+RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple \
+    --trusted-host pypi.tuna.tsinghua.edu.cn -r /app/requirements.txt || \
+    pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple \
     --trusted-host mirrors.aliyun.com -r /app/requirements.txt || \
     pip install --no-cache-dir -r /app/requirements.txt
 

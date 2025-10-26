@@ -103,16 +103,31 @@ class VideoAnalysisService:
                 # 用户指定的分辨率也要在合理范围内
                 dynamic_resolution = max(min_resolution, min(max_resolution, user_resolution))
             
+            # 计算保持宽高比的YOLO推理分辨率
+            # 根据视频宽高比，计算对应的YOLO推理尺寸
+            aspect_ratio = video_width / video_height
+            if aspect_ratio > 1:  # 宽 > 高
+                yolo_width = dynamic_resolution
+                yolo_height = int(dynamic_resolution / aspect_ratio)
+            else:  # 高 >= 宽
+                yolo_height = dynamic_resolution
+                yolo_width = int(dynamic_resolution * aspect_ratio)
+            
+            # 确保尺寸是32的倍数（YOLO要求）
+            yolo_width = int(yolo_width / 32) * 32
+            yolo_height = int(yolo_height / 32) * 32
+            
             print(f"🎯 视频分析参数:")
             print(f"   原始视频尺寸: {video_width}×{video_height}")
-            print(f"   实际分析分辨率: {dynamic_resolution}×{dynamic_resolution}")
+            print(f"   实际分析分辨率: {yolo_width}×{yolo_height} (保持宽高比)")
             print(f"   检测参数: 置信度={confidence_float}, IoU={iou_float}, 最大检测={max_det_int}")
             print(f"   优化策略: {optimization_strategy}")
             
             for ok, frame_bgr in iter_video_frames(video_path, sample_stride=1, max_size=dynamic_resolution):
                 if not ok:
                     break
-                res = detector.detect_single_point(frame_bgr, imgsz=dynamic_resolution, conf=confidence_float, iou=iou_float, max_det=max_det_int)
+                # 使用元组格式指定YOLO推理分辨率，保持宽高比
+                res = detector.detect_single_point(frame_bgr, imgsz=(yolo_height, yolo_width), conf=confidence_float, iou=iou_float, max_det=max_det_int)
                 if res is not None:
                     cx, cy, conf = res
                     # 获取当前帧的实际尺寸（可能被缩放）
@@ -416,7 +431,24 @@ class VideoAnalysisService:
         except Exception as e:
             from app.routes.analyze import _JOB_STORE
             _JOB_STORE[job_id]["status"] = "error"
-            _JOB_STORE[job_id]["error"] = str(e)
+            
+            # 处理CUDA错误
+            error_msg = str(e)
+            if "CUDA error" in error_msg or "cudaErrorUnknown" in error_msg:
+                print(f"⚠️ CUDA错误检测到: {error_msg}")
+                # 尝试清理GPU内存
+                try:
+                    import torch
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                        torch.cuda.synchronize()
+                        print("🧹 已清理GPU内存")
+                except Exception as cleanup_error:
+                    print(f"⚠️ GPU内存清理失败: {cleanup_error}")
+                
+                error_msg = f"GPU处理错误: {error_msg}。建议重启服务或检查GPU状态。"
+            
+            _JOB_STORE[job_id]["error"] = error_msg
             # 即使出错也要删除视频文件
             try:
                 os.remove(video_path)

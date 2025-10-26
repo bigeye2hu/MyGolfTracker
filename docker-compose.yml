@@ -8,11 +8,14 @@ services:
     ports:
       - "5005:5005"
     environment:
-      - MODEL_PATH=data/best.pt
+      - MODEL_PATH=data/1280p_yolo11x_5090_full.pt
       - SERVICE_PORT=5005
       - CUDA_VISIBLE_DEVICES=0
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - CUDA_LAUNCH_BLOCKING=1
+      - TORCH_USE_CUDA_DSA=1
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
     deploy:
       resources:
         limits:

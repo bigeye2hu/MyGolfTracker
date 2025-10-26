@@ -85,11 +85,25 @@ def _analyze_video_job(job_id: str, video_path: str, resolution: str = "480", co
         iou_float = float(iou) if iou else 0.7
         max_det_int = int(max_det) if max_det.isdigit() else 10
         
-        print(f"使用分析参数: 分辨率={resolution_int}×{resolution_int}, 置信度={confidence_float}, IoU={iou_float}, 最大检测={max_det_int}")
+        # 计算保持宽高比的YOLO推理分辨率
+        aspect_ratio = video_width / video_height
+        if aspect_ratio > 1:  # 宽 > 高
+            yolo_width = resolution_int
+            yolo_height = int(resolution_int / aspect_ratio)
+        else:  # 高 >= 宽
+            yolo_height = resolution_int
+            yolo_width = int(resolution_int * aspect_ratio)
+        
+        # 确保尺寸是32的倍数（YOLO要求）
+        yolo_width = int(yolo_width / 32) * 32
+        yolo_height = int(yolo_height / 32) * 32
+        
+        print(f"使用分析参数: 分辨率={yolo_width}×{yolo_height} (保持宽高比), 置信度={confidence_float}, IoU={iou_float}, 最大检测={max_det_int}")
         for ok, frame_bgr in iter_video_frames(video_path, sample_stride=1, max_size=resolution_int):
             if not ok:
                 break
-            res = detector.detect_single_point(frame_bgr, imgsz=resolution_int, conf=confidence_float, iou=iou_float, max_det=max_det_int)
+            # 使用元组格式指定YOLO推理分辨率，保持宽高比
+            res = detector.detect_single_point(frame_bgr, imgsz=(yolo_height, yolo_width), conf=confidence_float, iou=iou_float, max_det=max_det_int)
             if res is not None:
                 cx, cy, conf = res
                 # 获取当前帧的实际尺寸（可能被缩放）

@@ -13,7 +13,7 @@ source venv/bin/activate
 
 # 设置环境变量
 export CUDA_VISIBLE_DEVICES=0
-export MODEL_PATH=data/best.pt
+export MODEL_PATH=data/1280p_yolo11x_5090_full.pt
 export SERVICE_PORT=5005
 
 echo "📡 启动 FastAPI 开发服务器..."

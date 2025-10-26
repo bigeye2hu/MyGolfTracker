@@ -648,7 +648,7 @@ async def get_server_test_page():
             <h1>🏌️ GolfTracker 服务器端测试</h1>
             <p>上传高尔夫挥杆视频，测试YOLOv8检测和生成golftrainer兼容数据</p>
             <div style="margin-top:8px;padding:8px 12px;border:1px solid #ddd;border-radius:8px;background:#f8f9fa;display:inline-block;color:#333;">
-              <strong style="color:#2c3e50;">运行模式</strong>：RTX 5090 GPU / 高精度分辨率 <code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">1920×1920</code> / 置信度 <code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">0.2</code> / IoU <code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">0.9</code> / 最大检测 <code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">10</code>
+              <strong style="color:#2c3e50;">运行模式</strong>：RTX 5090 GPU / 长边分辨率 <code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">1920</code> <span style="color:#28a745;font-size:12px;">(保持宽高比)</span> / 置信度 <code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">0.2</code> / IoU <code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">0.9</code> / 最大检测 <code style="background:#e9ecef;color:#495057;padding:2px 4px;border-radius:3px;">10</code>
             </div>
             
             <!-- 视频转换服务入口 -->
@@ -904,7 +904,7 @@ async def get_server_test_page():
 @router.post("/video")
 async def analyze_video_test(
     video: UploadFile = File(...), 
-    resolution: str = Form("960"),  # 默认使用960×960分辨率
+    resolution: str = Form("auto"),  # 默认自动使用视频实际分辨率
     confidence: str = Form("0.01"),
     iou: str = Form("0.7"),
     max_det: str = Form("10"),

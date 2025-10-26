@@ -164,7 +164,7 @@ async def get_model_performance():
     return {
         "success": True,
         "performance": {
-            "current_model": "best.pt",
+            "current_model": "1280p_yolo11x_5090_full.pt",
             "accuracy": "95.47% mAP50",
             "speed": "~1.3s per inference",
             "gpu_usage": "87% average"

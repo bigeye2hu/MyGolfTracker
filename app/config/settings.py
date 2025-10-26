@@ -25,7 +25,7 @@ VIDEO_ANALYSIS_CONFIG = {
     "jpeg_quality": 90,
     "resolution_limits": {
         "min": 480,    # 最小分辨率
-        "max": 1920    # 最大分辨率
+        "max": 2560    # 最大分辨率（RTX 5090支持更高分辨率）
     }
 }
 

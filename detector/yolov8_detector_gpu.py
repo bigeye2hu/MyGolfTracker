@@ -28,13 +28,11 @@ class YOLOv8DetectorGPU:
                 # 将模型移动到 GPU，启用 half 精度以提升速度
                 model.to("cuda")
                 if hasattr(model, "model") and hasattr(model.model, "half"):
-                    model.model.half = True  # 启用半精度推理
+                    model.model.half()  # 启用半精度推理
             except Exception as e:
                 print(f"GPU初始化失败，回退到CPU: {e}")
                 # 如果GPU不可用，回退到CPU
                 model.to("cpu")
-                if hasattr(model, "model") and hasattr(model.model, "half"):
-                    model.model.half = False
             YOLOv8DetectorGPU._model = model
 
     def detect_single_point(self, image_bgr: np.ndarray, debug: bool = False, imgsz: int = 480, conf: float = 0.01, iou: float = 0.7, max_det: int = 10) -> Optional[Tuple[float, float, float]]:

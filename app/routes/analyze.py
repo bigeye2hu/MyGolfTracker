@@ -940,17 +940,24 @@ async def analyze_video_test(
             shutil.copyfileobj(video.file, tmp)
             tmp_path = tmp.name
 
-        # 检查视频兼容性
-        compatibility_info = check_video_compatibility(tmp_path)
-        print(f"视频兼容性检查: {compatibility_info}")
+        # 快速检查：只检查文件是否存在和大小（不读取视频内容）
+        quick_check = {
+            "compatible": True,
+            "checked": False,
+            "message": "兼容性检查将在后台进行"
+        }
+        if not os.path.exists(tmp_path) or os.path.getsize(tmp_path) == 0:
+            quick_check["compatible"] = False
+            quick_check["error"] = "文件无效"
 
         # 后台任务：生成 job_id 并启动线程处理
+        # 兼容性检查移到后台线程，避免阻塞响应
         job_id = str(uuid.uuid4())
         _JOB_STORE[job_id] = {
             "status": "queued", 
             "progress": 0, 
             "filename": video.filename,
-            "compatibility": compatibility_info,
+            "compatibility": quick_check,
             "resolution": resolution,
             "confidence": confidence,
             "iou": iou,
@@ -963,20 +970,15 @@ async def analyze_video_test(
         response = {
             "job_id": job_id, 
             "status": "queued",
-            "compatibility": compatibility_info
+            "compatibility": quick_check
         }
         
-        # 如果不兼容，添加警告信息和转换服务链接
-        if not compatibility_info.get("compatible", True):
+        # 快速检查如果失败，添加警告
+        if not quick_check.get("compatible", True):
             response["warning"] = {
-                "message": "检测到视频格式可能不兼容浏览器播放",
-                "codec": compatibility_info.get("video_info", {}).get("codec", "unknown"),
-                "recommendation": "建议使用H.264编码的MP4文件以获得最佳兼容性",
-                "conversion_service": {
-                    "available": True,
-                    "url": "/convert/test-page",
-                    "description": "使用我们的转换服务将视频转换为兼容格式"
-                }
+                "message": "文件上传失败或文件无效",
+                "error": quick_check.get("error", "unknown"),
+                "recommendation": "请检查文件是否完整"
             }
         
         return response

@@ -369,10 +369,25 @@ class UploadModule {
             console.log('FormData已创建，准备发送请求到 /analyze/video');
             console.log('参数:', { resolution, confidence, iou, maxDet, selectedStrategy });
 
-            const response = await fetch('/analyze/video', {
-                method: 'POST',
-                body: formData
-            });
+            // 设置5分钟超时（足够上传和初始化）
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 300000); // 5分钟
+            
+            let response;
+            try {
+                response = await fetch('/analyze/video', {
+                    method: 'POST',
+                    body: formData,
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+            } catch (error) {
+                clearTimeout(timeoutId);
+                if (error.name === 'AbortError') {
+                    throw new Error('请求超时（5分钟），请尝试使用更小的视频文件或降低分辨率');
+                }
+                throw error;
+            }
 
             console.log('收到响应:', response.status, response.statusText);
 
